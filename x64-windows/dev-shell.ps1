@@ -1,6 +1,6 @@
 # Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:x64-windows/devshell.ps1
+# file:x64-windows/dev-shell.ps1
 
 # --- 1. Initialize Visual Studio 2026 Dev Environment ---
 # We check for VCINSTALLDIR to see if the environment is already loaded
@@ -64,8 +64,8 @@ if (!$env:VCINSTALLDIR) {
         }
 
         # 4. Cleanup & Path Refresh
-        if (Test-Path $installerPath) { Remove-Item $installerPath -Force }
-        if (Test-Path $logPath) { Remove-Item $logPath -Force }
+        if (Test-Path $installerPath) { Remove-Item $installerPath -Force -ErrorAction SilentlyContinue }
+        if (Test-Path $logPath) { Remove-Item $logPath -Force -ErrorAction SilentlyContinue }
         
         # Re-detect path now that installation is finished
         if (Test-Path $vswhere) {

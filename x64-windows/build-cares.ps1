@@ -25,7 +25,7 @@ if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env
 $EnvironmentDir = "$env:ENVIRONMENT_PATH"
 
 # --- 1. Initialize Visual Studio 2026 Dev Environment ---
-$DevShellBootstrapScript = Join-Path $PSScriptRoot "devshell.ps1"
+$DevShellBootstrapScript = Join-Path $PSScriptRoot "dev-shell.ps1"
 if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
     Write-Error "Required dependency '$DevShellBootstrapScript' not found!"
     return
@@ -115,15 +115,15 @@ if (Test-Path $Source) {
 # --- 8. Clean Final Destination ---
 if (Test-Path $caresInstallDir) {
     Write-Host "Wiping existing installation..." -ForegroundColor Yellow
-    Remove-Item -Recurse -Force $caresInstallDir -ErrorAction SilentlyContinue
+    Remove-Item $caresInstallDir -Recurse -Force -ErrorAction SilentlyContinue
 }
-New-Item -ItemType Directory -Path $caresInstallDir -Force | Out-Null
+New-Item -ItemType Directory -Path $caresInstallDir -Force -ErrorAction SilentlyContinue | Out-Null
 
 # Ensure fresh build directory
-if (Test-Path $BuildDirShared) { Remove-Item -Recurse -Force $BuildDirShared }
-if (Test-Path $BuildDirStatic) { Remove-Item -Recurse -Force $BuildDirStatic }
-New-Item -ItemType Directory -Path $BuildDirShared -Force | Out-Null
-New-Item -ItemType Directory -Path $BuildDirStatic -Force | Out-Null
+if (Test-Path $BuildDirShared) { Remove-Item $BuildDirShared -Recurse -Force -ErrorAction SilentlyContinue }
+if (Test-Path $BuildDirStatic) { Remove-Item $BuildDirStatic -Recurse -Force -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Path $BuildDirShared -Force -ErrorAction SilentlyContinue | Out-Null
+New-Item -ItemType Directory -Path $BuildDirStatic -Force -ErrorAction SilentlyContinue | Out-Null
 
 # Common CMake Flags 
 $CommonCmakeArgs = @(
@@ -158,7 +158,7 @@ if ($LASTEXITCODE -ne 0) { Write-Error "c-ares Static Build failed with exit cod
 $StaticLibPath = Join-Path $caresInstallDir "lib/cares.lib"
 $NewStaticName = Join-Path $caresInstallDir "lib/caress.lib"
 if (Test-Path $StaticLibPath) {
-    Move-Item -Path $StaticLibPath -Destination $NewStaticName -Force
+    Move-Item -Path $StaticLibPath -Destination $NewStaticName -Force -ErrorAction SilentlyContinue
     Write-Host "Static library renamed to caress.lib" -ForegroundColor Gray
 }
 
@@ -182,8 +182,8 @@ if ($LASTEXITCODE -ne 0) { Write-Error "c-ares Shared Build failed with exit cod
 Write-Host "Successfully built and installed Dual-Build c-ares to $caresInstallDir!" -ForegroundColor Green
 
 # Cleanup temporary build debris
-Remove-Item -Recurse -Force $BuildDirShared
-Remove-Item -Recurse -Force $BuildDirStatic
+Remove-Item $BuildDirShared -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item $BuildDirStatic -Recurse -Force -ErrorAction SilentlyContinue
 
 # Generate Environment Helper with Clean Paths
 $caresInstallDir = $caresInstallDir.TrimEnd('\')

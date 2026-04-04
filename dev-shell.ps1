@@ -1,17 +1,6 @@
 # Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:dep-ninja.ps1
-
-param (
-    [Parameter(HelpMessage="Path for ninja storage", Mandatory=$false)]
-    [string]$ninjaInstallDir = "$env:LIBRARIES_PATH\ninja",
-
-    [Parameter(HelpMessage = "Force a full uninstallation of the local Ninja version before continuing", Mandatory = $false)]
-    [switch]$forceCleanup,
-    
-    [Parameter(HelpMessage = "Add's Ninja Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
-    [switch]$withMachineEnvironment
-)
+# file:dev-shell.ps1
 
 # 1. Architecture Detection
 $currentArch = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLower()
@@ -34,15 +23,10 @@ else {
 }
 
 # 3. Delegation Logic
-$targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\dep-ninja.ps1"
+$targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\dev-shell.ps1"
 
 if (Test-Path $targetScript) {
     Write-Host "[OS/ARCH] $platform $currentArch detected. Delegating..." -ForegroundColor Cyan
-    
-    # 1. Ensure the default path is captured if not explicitly provided by the user
-    if (-not $PSBoundParameters.ContainsKey('ninjaInstallDir')) {
-        $PSBoundParameters['ninjaInstallDir'] = $ninjaInstallDir
-    }
     
     & $targetScript @PSBoundParameters
 }

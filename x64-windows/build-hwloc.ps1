@@ -25,7 +25,7 @@ if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env
 $EnvironmentDir = "$env:ENVIRONMENT_PATH"
 
 # --- 1. Initialize Visual Studio 2026 Dev Environment ---
-$DevShellBootstrapScript = Join-Path $PSScriptRoot "devshell.ps1"
+$DevShellBootstrapScript = Join-Path $PSScriptRoot "dev-shell.ps1"
 if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
     Write-Error "Required dependency '$DevShellBootstrapScript' not found!"
     return
@@ -114,13 +114,13 @@ if (Test-Path $Source) {
 # --- 8. Clean & Build ---
 if (Test-Path $hwlocInstallDir) {
     Write-Host "Wiping existing installation at $hwlocInstallDir..." -ForegroundColor Yellow
-    Remove-Item -Recurse -Force $hwlocInstallDir -ErrorAction SilentlyContinue
+    Remove-Item $hwlocInstallDir -Recurse -Force -ErrorAction SilentlyContinue
 }
-New-Item -ItemType Directory -Path $hwlocInstallDir -Force | Out-Null
+New-Item -ItemType Directory -Path $hwlocInstallDir -Force -ErrorAction SilentlyContinue | Out-Null
 
 # Ensure fresh build directory
-if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir }
-New-Item -ItemType Directory -Path $BuildDir -Force | Out-Null
+if (Test-Path $BuildDir) { Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Path $BuildDir -Force -ErrorAction SilentlyContinue | Out-Null
 
 # --- Dependencies: ---
 [string]$RoothwlocInstallDir = Split-Path -Path $hwlocInstallDir -Parent
@@ -184,7 +184,7 @@ if ($LASTEXITCODE -ne 0) { Write-Error "hwloc Build failed with exit code $LASTE
 Write-Host "Successfully built and installed hwloc to $hwlocInstallDir!" -ForegroundColor Green
 
 # Cleanup temporary build debris
-Remove-Item -Recurse -Force $BuildDir
+Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue
 
 # Generate Environment Helper with Clean Paths
 $hwlocInstallDir = $hwlocInstallDir.TrimEnd('\')
@@ -198,7 +198,7 @@ $libxml2Dll = Join-Path $env:LIBXML2_PATH "bin\libxml2.dll"
 
 if (Test-Path $libxml2Dll) {
     Write-Host "Deploying libxml2.dll to hwloc bin..." -ForegroundColor Cyan
-    Copy-Item -Path $libxml2Dll -Destination $hwlocBinPath -Force
+    Copy-Item -Path $libxml2Dll -Destination $hwlocBinPath -Force -ErrorAction SilentlyContinue | Out-Null
 } else {
     Write-Warning "Could not find libxml2.dll at $libxml2Dll. You may need to add its bin folder to PATH manually."
 }

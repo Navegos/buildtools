@@ -25,7 +25,7 @@ if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env
 $EnvironmentDir = "$env:ENVIRONMENT_PATH"
 
 # --- 1. Initialize Visual Studio 2026 Dev Environment ---
-$DevShellBootstrapScript = Join-Path $PSScriptRoot "devshell.ps1"
+$DevShellBootstrapScript = Join-Path $PSScriptRoot "dev-shell.ps1"
 if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
     Write-Error "Required dependency '$DevShellBootstrapScript' not found!"
     return
@@ -114,13 +114,13 @@ if (Test-Path $Source) {
 # --- 8. Clean & Build ---
 if (Test-Path $oneTBBInstallDir) {
     Write-Host "Wiping existing installation at $oneTBBInstallDir..." -ForegroundColor Yellow
-    Remove-Item -Recurse -Force $oneTBBInstallDir -ErrorAction SilentlyContinue
+    Remove-Item $oneTBBInstallDir -Recurse -Force -ErrorAction SilentlyContinue
 }
-New-Item -ItemType Directory -Path $oneTBBInstallDir -Force | Out-Null
+New-Item -ItemType Directory -Path $oneTBBInstallDir -Force -ErrorAction SilentlyContinue | Out-Null
 
 # Ensure fresh build directory
-if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir }
-New-Item -ItemType Directory -Path $BuildDir -Force | Out-Null
+if (Test-Path $BuildDir) { Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Path $BuildDir -Force -ErrorAction SilentlyContinue | Out-Null
 
 Write-Host "Configuring with Clang/Ninja..." -ForegroundColor Cyan
 cmake -G "Ninja" `
@@ -158,7 +158,7 @@ if ($LASTEXITCODE -ne 0) { Write-Error "oneTBB Build failed with exit code $LAST
 Write-Host "Successfully built and installed oneTBB to $oneTBBInstallDir!" -ForegroundColor Green
 
 # Cleanup temporary build debris
-Remove-Item -Recurse -Force $BuildDir
+Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue
 
 # Generate Environment Helper with Clean Paths
 $oneTBBInstallDir = $oneTBBInstallDir.TrimEnd('\')

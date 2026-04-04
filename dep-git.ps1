@@ -1,16 +1,13 @@
 # Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:dep-ninja.ps1
+# file:dep-git.ps1
 
 param (
-    [Parameter(HelpMessage="Path for ninja storage", Mandatory=$false)]
-    [string]$ninjaInstallDir = "$env:LIBRARIES_PATH\ninja",
-
-    [Parameter(HelpMessage = "Force a full uninstallation of the local Ninja version before continuing", Mandatory = $false)]
-    [switch]$forceCleanup,
+    [Parameter(HelpMessage = "Path for git Installation", Mandatory = $false)]
+    [string]$gitInstallDir = $(Join-Path $env:ProgramFiles "Git"),
     
-    [Parameter(HelpMessage = "Add's Ninja Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
-    [switch]$withMachineEnvironment
+    [Parameter(HelpMessage = "Force a full uninstallation of the local GIT version before continuing", Mandatory = $false)]
+    [switch]$forceCleanup
 )
 
 # 1. Architecture Detection
@@ -34,14 +31,14 @@ else {
 }
 
 # 3. Delegation Logic
-$targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\dep-ninja.ps1"
+$targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\dep-git.ps1"
 
 if (Test-Path $targetScript) {
     Write-Host "[OS/ARCH] $platform $currentArch detected. Delegating..." -ForegroundColor Cyan
     
     # 1. Ensure the default path is captured if not explicitly provided by the user
-    if (-not $PSBoundParameters.ContainsKey('ninjaInstallDir')) {
-        $PSBoundParameters['ninjaInstallDir'] = $ninjaInstallDir
+    if (-not $PSBoundParameters.ContainsKey('gitInstallDir')) {
+        $PSBoundParameters['gitInstallDir'] = $gitInstallDir
     }
     
     & $targetScript @PSBoundParameters

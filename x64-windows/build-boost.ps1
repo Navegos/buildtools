@@ -25,7 +25,7 @@ if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env
 $EnvironmentDir = "$env:ENVIRONMENT_PATH"
 
 # --- 1. Initialize Visual Studio 2026 Dev Environment ---
-$DevShellBootstrapScript = Join-Path $PSScriptRoot "devshell.ps1"
+$DevShellBootstrapScript = Join-Path $PSScriptRoot "dev-shell.ps1"
 if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
     Write-Error "Required dependency '$DevShellBootstrapScript' not found!"
     return
@@ -85,17 +85,17 @@ if (!(Test-Path $b2Path)) {
 # --- 5. Clean Final Destination ---
 if (Test-Path $boostInstallDir) {
     Write-Host "Wiping existing installation..." -ForegroundColor Yellow
-    Remove-Item -Recurse -Force $boostInstallDir -ErrorAction SilentlyContinue
+    Remove-Item $boostInstallDir -Recurse -Force -ErrorAction SilentlyContinue
 }
-New-Item -ItemType Directory -Path $boostInstallDir -Force | Out-Null
+New-Item -ItemType Directory -Path $boostInstallDir -Force -ErrorAction SilentlyContinue | Out-Null
 
 # Ensure fresh build directory
-if (Test-Path $BuildDirShared) { Remove-Item -Recurse -Force $BuildDirShared }
-if (Test-Path $BuildDirStatic) { Remove-Item -Recurse -Force $BuildDirStatic }
-if (Test-Path $StageDir) { Remove-Item -Recurse -Force $StageDir }
-New-Item -ItemType Directory -Path $BuildDirShared -Force | Out-Null
-New-Item -ItemType Directory -Path $BuildDirStatic -Force | Out-Null
-New-Item -ItemType Directory -Path $StageDir -Force | Out-Null
+if (Test-Path $BuildDirShared) { Remove-Item $BuildDirShared -Recurse -Force -ErrorAction SilentlyContinue }
+if (Test-Path $BuildDirStatic) { Remove-Item $BuildDirStatic -Recurse -Force -ErrorAction SilentlyContinue }
+if (Test-Path $StageDir) { Remove-Item $StageDir -Recurse -Force -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Path $BuildDirShared -Force -ErrorAction SilentlyContinue | Out-Null
+New-Item -ItemType Directory -Path $BuildDirStatic -Force -ErrorAction SilentlyContinue | Out-Null
+New-Item -ItemType Directory -Path $StageDir -Force -ErrorAction SilentlyContinue | Out-Null
 
 # --- 6. Build Execution (Navegos Dual-Build) ---
 # Note: Using address-model=64 for Win64
@@ -121,7 +121,7 @@ $boostLibDir = Join-Path $boostInstallDir "lib"
 $boostBinPath = Join-Path $boostInstallDir "bin"
 $boostCMakePath  = $boostInstallDir.Replace('\', '/')
 
-if (!(Test-Path $boostBinPath)) { New-Item -ItemType Directory -Path $boostBinPath -Force | Out-Null }
+if (!(Test-Path $boostBinPath)) { New-Item -ItemType Directory -Path $boostBinPath -Force -ErrorAction SilentlyContinue | Out-Null }
 
 Write-Host "Migrating Boost DLLs from \lib to \bin..." -ForegroundColor Cyan
 $dlls = Get-ChildItem -Path $boostLibDir -Filter "*.dll"
@@ -129,7 +129,7 @@ $pdbs = Get-ChildItem -Path $boostLibDir -Filter "*.pdb"
 
 if ($dlls.Count -gt 0) {
     foreach ($dll in $dlls) {
-        Move-Item -Path $dll.FullName -Destination $boostBinPath -Force
+        Move-Item -Path $dll.FullName -Destination $boostBinPath -Force -ErrorAction SilentlyContinue
     }
 } else {
     Write-Host "No DLLs found in \lib. They may already be in \bin or build failed." -ForegroundColor Yellow
@@ -137,15 +137,15 @@ if ($dlls.Count -gt 0) {
 
 if ($pdbs.Count -gt 0) {
     foreach ($pdb in $pdbs) {
-        Move-Item -Path $pdb.FullName -Destination $boostBinPath -Force
+        Move-Item -Path $pdb.FullName -Destination $boostBinPath -Force -ErrorAction SilentlyContinue
     }
 } else {
     Write-Host "No PDBs found in \lib. They may already be in \bin or build failed." -ForegroundColor Yellow
 }
 
 # Cleanup temporary build debris
-Remove-Item -Recurse -Force $BuildDirShared
-Remove-Item -Recurse -Force $BuildDirStatic
+Remove-Item $BuildDirShared -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item $BuildDirStatic -Recurse -Force -ErrorAction SilentlyContinue
 
 # --- 7. Create Environment Helper ---
 Write-Host "Generating environment helper script..." -ForegroundColor Cyan

@@ -16,16 +16,15 @@ param (
     [string]$ninjaInstallDir = "$env:LIBRARIES_PATH\ninja"
 )
 
-# 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
-    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
+    Write-Error "User Environment variables missing. With administrator privileges run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
     return
 }
 
 $EnvironmentDir = "$env:ENVIRONMENT_PATH"
 
 # --- 1. Initialize Visual Studio 2026 Dev Environment ---
-$DevShellBootstrapScript = Join-Path $PSScriptRoot "devshell.ps1"
+$DevShellBootstrapScript = Join-Path $PSScriptRoot "dev-shell.ps1"
 if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
     Write-Error "Required dependency '$DevShellBootstrapScript' not found!"
     return
@@ -97,6 +96,8 @@ $BuildDir   = Join-Path $Source "build_dir"  # Nested inside source
 $RepoUrl    = $GitUrl
 $Branch     = $GitBranch
 $CMakeSource = $Source
+$tag_name    = $Branch
+$url        = $RepoUrl
 
 # --- 7. Source Management ---
 if (Test-Path $Source) {
@@ -105,63 +106,69 @@ if (Test-Path $Source) {
     git fetch --all
     git reset --hard "origin/$Branch"
     git pull --recurse-submodules --force
+    $tagCommit = (& git rev-parse --verify HEAD).Trim()
 } else {
     Write-Host "Cloning ninja ($Branch) into $Source..." -ForegroundColor Cyan
     git clone --recurse-submodules $RepoUrl $Source -b $Branch
     Set-Location $Source
+    $tagCommit = (& git rev-parse --verify HEAD).Trim()
 }
 
 # --- 8. Clean & Build (Shadow Swap Logic) ---
 # We use .exe extension so it remains 'executable' and detectable
 $GlobalBinDir = "$env:BINARIES_PATH"
-if (-not (Test-Path $GlobalBinDir)) { New-Item -ItemType Directory -Path $GlobalBinDir -Force | Out-Null }
 $TargetLink = Join-Path $GlobalBinDir "ninja.exe"
-$CurrentNinjaBin = Join-Path $ninjaInstallDir "ninja.exe"
 $ninjaBinPath = Join-Path $ninjaInstallDir "bin"
-if (-not (Test-Path $CurrentNinjaBin)) { $CurrentNinjaBin = Join-Path $ninjaBinPath "ninja.exe" }
-$TempNinja = Join-Path (Split-Path $CurrentNinjaBin) "ninja_old.exe"
+
+# 2. Check for existing installation
+$ninjaExePath = Join-Path $ninjaInstallDir "ninja.exe"
+if (-not (Test-Path $ninjaExePath)) { $ninjaExePath = Join-Path $ninjaBinPath "ninja.exe" }
+$TempNinja = Join-Path (Split-Path $ninjaExePath) "ninja_old.exe"
+$versionFile = Join-Path $ninjaInstallDir "version.json"
 
 if (!(Test-Path $ninjaInstallDir)) {
-    New-Item -ItemType Directory -Path $ninjaInstallDir -Force | Out-Null
-} else {
-    if (Test-Path $CurrentNinjaBin) {
-        if (Test-Path $TempNinja) { Remove-Item $TempNinja -Force }
-        
-        # 1. Rename the existing binary (Windows allows this while running)
-        Move-Item -Path $CurrentNinjaBin -Destination $TempNinja -Force
-        Write-Host "[SWAP] Active ninja.exe -> ninja_old.exe" -ForegroundColor Yellow
+    New-Item -ItemType Directory -Path $ninjaInstallDir -Force -ErrorAction SilentlyContinue | Out-Null
+    New-Item -ItemType Directory -Path $ninjaBinPath -Force -ErrorAction SilentlyContinue | Out-Null
+}
 
-        if (Test-Path $TempNinja) {
-            Write-Host "Creating global symlink: $TargetLink" -ForegroundColor Cyan
+if (Test-Path $ninjaExePath) {
+    if (Test-Path $TempNinja) { Remove-Item $TempNinja -Force -ErrorAction SilentlyContinue }
 
-            # Remove existing to avoid conflict
-            if (Test-Path $TargetLink) { Remove-Item $TargetLink -Force }
+    # 1. Rename the existing binary (Windows allows this while running)
+    Move-Item -Path $ninjaExePath -Destination $TempNinja -Force -ErrorAction SilentlyContinue
+    Write-Host "[SWAP] Active ninja.exe -> ninja_old.exe" -ForegroundColor Yellow
+
+    if (Test-Path $TempNinja) {
+        Write-Host "Creating global symlink: $TargetLink" -ForegroundColor Cyan
+
+        # Remove existing symlink we are creating a new one
+        if (Test-Path $TargetLink) { Remove-Item $TargetLink -Force -ErrorAction SilentlyContinue }
             
-            # Create the Symbolic Link
-            try {
-                New-Item -ItemType SymbolicLink -Path $TargetLink -Value $TempNinja -ErrorAction Stop | Out-Null
-                Write-Host "[LINKED] Ninja (Global) -> $TempNinja" -ForegroundColor Green
-            } catch {
-                Write-Warning "Failed to create Symlink. Falling back to HardLink..."
-                New-Item -ItemType HardLink -Path $TargetLink -Value $TempNinja | Out-Null
-            }
-            
-            Write-Host "[LINKED] Ninja is now globally available via %BINARIES_PATH%" -ForegroundColor Green
-        } else {
-            Write-Error "CRITICAL: Could not find ninja.exe to symlink at $TempNinja"
-            if (Test-Path $TargetLink) { 
-                Write-Host "Cleaning up dead symlink at $TargetLink..." -ForegroundColor Yellow
-                Remove-Item $TargetLink -Force 
-            }
-            Pop-Location
-            return
+        # Create the Symbolic Link
+        try {
+            New-Item -ItemType SymbolicLink -Path $TargetLink -Value $TempNinja -ErrorAction Stop | Out-Null
+            Write-Host "[LINKED] Ninja (Global) -> $TempNinja" -ForegroundColor Green
         }
+        catch {
+            New-Item -ItemType HardLink -Path $TargetLink -Value $TempNinja | Out-Null
+        }
+            
+        Write-Host "[LINKED] Ninja is now globally available via %BINARIES_PATH%" -ForegroundColor Green
+    }
+    else {
+        Write-Error "CRITICAL: Could not find ninja.exe to symlink at $TempNinja"
+        if (Test-Path $TargetLink) { 
+            Write-Host "Cleaning up dead symlink at $TargetLink..." -ForegroundColor Yellow
+            Remove-Item $TargetLink -Force -ErrorAction SilentlyContinue 
+        }
+        Pop-Location
+        return
     }
 }
 
 # Ensure fresh build directory
-if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir }
-New-Item -ItemType Directory -Path $BuildDir -Force | Out-Null
+if (Test-Path $BuildDir) { Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Path $BuildDir -Force -ErrorAction SilentlyContinue | Out-Null
 
 Write-Host "Configuring with Clang/Ninja..." -ForegroundColor Cyan
 cmake -G "Ninja" `
@@ -184,9 +191,10 @@ if ($LASTEXITCODE -ne 0) { Write-Error "ninja Build failed with exit code $LASTE
 Write-Host "Successfully built and installed ninja to $ninjaInstallDir!" -ForegroundColor Green
 
 # Cleanup temporary build debris
-Remove-Item -Recurse -Force $BuildDir
+Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue
 
 # Generate Environment Helper with Clean Paths
+$ninjaBinPath = $ninjaBinPath.TrimEnd('\')
 $ninjaInstallDir = $ninjaInstallDir.TrimEnd('\')
 
 # --- 9. Create Environment Helper ---
@@ -214,30 +222,47 @@ if (Test-Path $ninjaEnvScript) { . $ninjaEnvScript } else {
 }
 
 # --- 10. Symlink to Global Binaries ---
-$NewNinjaBin = Join-Path $ninjaInstallDir "ninja.exe"
-if (-not (Test-Path $NewNinjaBin)) { $NewNinjaBin = Join-Path $ninjaBinPath "ninja.exe" }
+$ninjaExePath = Join-Path $ninjaInstallDir "ninja.exe"
+if (-not (Test-Path $ninjaExePath)) { $ninjaExePath = Join-Path $ninjaBinPath "ninja.exe" }
 
-if (Test-Path $NewNinjaBin) {
+if (Test-Path $ninjaExePath) {
+    # Ninja --version usually returns a single string like "1.12.1" or "1.12.1.git"
+    $rawVersion = (& $ninjaExePath --version).Trim()
+    # We extract only the numeric part (e.g., 1.12.1) so [version] can handle it
+    if ($rawVersion -match '^(\d+\.\d+\.\d+)') { $localVersion = $Matches[1] } else { $localVersion = "0.0.0" }
+
+    # Save new version state
+    $versionInfo = @{
+        url        = $url;
+        tag_name   = $tag_name;
+        commit     = $tagCommit;
+        version    = $localVersion;
+        rawversion = $rawVersion;
+        date       = (Get-Date).ToString("yyyy-MM-dd");
+        updated_at = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ");
+        type       = "source_build";
+    }
+    $versionInfo | ConvertTo-Json | Out-File -FilePath $versionFile -Encoding utf8 -Force
+
     Write-Host "Creating global symlink: $TargetLink" -ForegroundColor Cyan
 
-    # Remove existing to avoid conflict
-    if (Test-Path $TargetLink) { Remove-Item $TargetLink -Force }
+    # Remove existing symlink we are creating a new one
+    if (Test-Path $TargetLink) { Remove-Item $TargetLink -Force -ErrorAction SilentlyContinue }
     
     # Create the Symbolic Link
     try {
-        New-Item -ItemType SymbolicLink -Path $TargetLink -Value $NewNinjaBin -ErrorAction Stop | Out-Null
-        Write-Host "[LINKED] Ninja (Global) -> $NewNinjaBin" -ForegroundColor Green
+        New-Item -ItemType SymbolicLink -Path $TargetLink -Value $ninjaExePath -ErrorAction Stop | Out-Null
+        Write-Host "[LINKED] Ninja (Global) -> $ninjaExePath" -ForegroundColor Green
     } catch {
-        Write-Warning "Failed to create Symlink. Falling back to HardLink..."
-        New-Item -ItemType HardLink -Path $TargetLink -Value $NewNinjaBin | Out-Null
+        New-Item -ItemType HardLink -Path $TargetLink -Value $ninjaExePath | Out-Null
     }
     
     Write-Host "[LINKED] Ninja is now globally available via %BINARIES_PATH%" -ForegroundColor Green
 } else {
-    Write-Error "CRITICAL: Could not find ninja.exe to symlink at $NewNinjaBin"
+    Write-Error "CRITICAL: Could not find ninja.exe to symlink at $ninjaExePath"
     if (Test-Path $TargetLink) { 
         Write-Host "Cleaning up dead symlink at $TargetLink..." -ForegroundColor Yellow
-        Remove-Item $TargetLink -Force 
+        Remove-Item $TargetLink -Force -ErrorAction SilentlyContinue 
     }
     Pop-Location
     return
@@ -251,7 +276,7 @@ if (Test-Path $TempNinja) {
     Remove-Item $TempNinja -Force -ErrorAction SilentlyContinue
 }
 
-Write-Host "Ninja Version: $(ninja --version)" -ForegroundColor Gray
+Write-Host "Ninja Version: $(& $ninjaExePath --version)" -ForegroundColor Gray
 
 # --- Return to Start ---
 Pop-Location

@@ -25,7 +25,7 @@ if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env
 $EnvironmentDir = "$env:ENVIRONMENT_PATH"
 
 # --- 1. Initialize Visual Studio 2026 Dev Environment ---
-$DevShellBootstrapScript = Join-Path $PSScriptRoot "devshell.ps1"
+$DevShellBootstrapScript = Join-Path $PSScriptRoot "dev-shell.ps1"
 if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
     Write-Error "Required dependency '$DevShellBootstrapScript' not found!"
     return
@@ -115,15 +115,15 @@ if (Test-Path $Source) {
 # --- 8. Clean Final Destination ---
 if (Test-Path $lz4InstallDir) {
     Write-Host "Wiping existing installation..." -ForegroundColor Yellow
-    Remove-Item -Recurse -Force $lz4InstallDir -ErrorAction SilentlyContinue
+    Remove-Item $lz4InstallDir -Recurse -Force -ErrorAction SilentlyContinue
 }
-New-Item -ItemType Directory -Path $lz4InstallDir -Force | Out-Null
+New-Item -ItemType Directory -Path $lz4InstallDir -Force -ErrorAction SilentlyContinue | Out-Null
 
 # Ensure fresh build directory
-if (Test-Path $BuildDirShared) { Remove-Item -Recurse -Force $BuildDirShared }
-if (Test-Path $BuildDirStatic) { Remove-Item -Recurse -Force $BuildDirStatic }
-New-Item -ItemType Directory -Path $BuildDirShared -Force | Out-Null
-New-Item -ItemType Directory -Path $BuildDirStatic -Force | Out-Null
+if (Test-Path $BuildDirShared) { Remove-Item $BuildDirShared -Recurse -Force -ErrorAction SilentlyContinue }
+if (Test-Path $BuildDirStatic) { Remove-Item $BuildDirStatic -Recurse -Force -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Path $BuildDirShared -Force -ErrorAction SilentlyContinue | Out-Null
+New-Item -ItemType Directory -Path $BuildDirStatic -Force -ErrorAction SilentlyContinue | Out-Null
 
 # Common CMake Flags 
 $CommonCmakeArgs = @(
@@ -156,7 +156,7 @@ if ($LASTEXITCODE -ne 0) { Write-Error "lz4 Static Build failed with exit code $
 $StaticLibPath = Join-Path $lz4InstallDir "lib/lz4.lib"
 $NewStaticName = Join-Path $lz4InstallDir "lib/lz4s.lib"
 if (Test-Path $StaticLibPath) {
-    Move-Item -Path $StaticLibPath -Destination $NewStaticName -Force
+    Move-Item -Path $StaticLibPath -Destination $NewStaticName -Force -ErrorAction SilentlyContinue
     Write-Host "Static library renamed to lz4s.lib" -ForegroundColor Gray
 }
 
@@ -180,8 +180,8 @@ if ($LASTEXITCODE -ne 0) { Write-Error "lz4 Shared Build failed with exit code $
 Write-Host "Successfully built and installed Dual-Build lz4 to $lz4InstallDir!" -ForegroundColor Green
 
 # Cleanup temporary build debris
-Remove-Item -Recurse -Force $BuildDirShared
-Remove-Item -Recurse -Force $BuildDirStatic
+Remove-Item $BuildDirShared -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item $BuildDirStatic -Recurse -Force -ErrorAction SilentlyContinue
 
 # Generate Environment Helper with Clean Paths
 $lz4InstallDir = $lz4InstallDir.TrimEnd('\')

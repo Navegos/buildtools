@@ -25,7 +25,7 @@ if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env
 $EnvironmentDir = "$env:ENVIRONMENT_PATH"
 
 # --- 1. Initialize Visual Studio 2026 Dev Environment ---
-$DevShellBootstrapScript = Join-Path $PSScriptRoot "devshell.ps1"
+$DevShellBootstrapScript = Join-Path $PSScriptRoot "dev-shell.ps1"
 if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
     Write-Error "Required dependency '$DevShellBootstrapScript' not found!"
     return
@@ -115,15 +115,15 @@ if (Test-Path $Source) {
 # --- 8. Clean Final Destination ---
 if (Test-Path $lzmaInstallDir) {
     Write-Host "Wiping existing installation..." -ForegroundColor Yellow
-    Remove-Item -Recurse -Force $lzmaInstallDir -ErrorAction SilentlyContinue
+    Remove-Item $lzmaInstallDir -Recurse -Force -ErrorAction SilentlyContinue
 }
-New-Item -ItemType Directory -Path $lzmaInstallDir -Force | Out-Null
+New-Item -ItemType Directory -Path $lzmaInstallDir -Force -ErrorAction SilentlyContinue | Out-Null
 
 # Ensure fresh build directory
-if (Test-Path $BuildDirShared) { Remove-Item -Recurse -Force $BuildDirShared }
-if (Test-Path $BuildDirStatic) { Remove-Item -Recurse -Force $BuildDirStatic }
-New-Item -ItemType Directory -Path $BuildDirShared -Force | Out-Null
-New-Item -ItemType Directory -Path $BuildDirStatic -Force | Out-Null
+if (Test-Path $BuildDirShared) { Remove-Item $BuildDirShared -Recurse -Force -ErrorAction SilentlyContinue }
+if (Test-Path $BuildDirStatic) { Remove-Item $BuildDirStatic -Recurse -Force -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Path $BuildDirShared -Force -ErrorAction SilentlyContinue | Out-Null
+New-Item -ItemType Directory -Path $BuildDirStatic -Force -ErrorAction SilentlyContinue | Out-Null
 
 # Common CMake Flags 
 $CommonCmakeArgs = @(
@@ -160,7 +160,7 @@ if ($LASTEXITCODE -ne 0) { Write-Error "lzma Static Build failed with exit code 
 $StaticLibPath = Join-Path $lzmaInstallDir "lib/lzma.lib"
 $NewStaticName = Join-Path $lzmaInstallDir "lib/lzmas.lib"
 if (Test-Path $StaticLibPath) {
-    Move-Item -Path $StaticLibPath -Destination $NewStaticName -Force
+    Move-Item -Path $StaticLibPath -Destination $NewStaticName -Force -ErrorAction SilentlyContinue
     Write-Host "Static library renamed to lzmas.lib" -ForegroundColor Gray
 }
 
@@ -184,8 +184,8 @@ if ($LASTEXITCODE -ne 0) { Write-Error "lzma Shared Build failed with exit code 
 Write-Host "Successfully built and installed Dual-Build lzma to $lzmaInstallDir!" -ForegroundColor Green
 
 # Cleanup temporary build debris
-Remove-Item -Recurse -Force $BuildDirShared
-Remove-Item -Recurse -Force $BuildDirStatic
+Remove-Item $BuildDirShared -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item $BuildDirStatic -Recurse -Force -ErrorAction SilentlyContinue
 
 # Generate Environment Helper with Clean Paths
 $lzmaInstallDir = $lzmaInstallDir.TrimEnd('\')

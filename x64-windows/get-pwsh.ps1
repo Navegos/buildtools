@@ -2,6 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # file:x64-windows/get-pwsh.ps1
 
+param (
+    [Parameter(HelpMessage = "Path for PowerShell Installation", Mandatory = $false)]
+    [string]$powershellInstallDir = $(Join-Path $env:ProgramFiles "PowerShell")
+)
+
 # --- 0. Self-Elevation Logic ---
 $IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
@@ -9,15 +14,20 @@ if (-not $IsAdmin) {
     Write-Host "Elevation required to install/update PowerShell. Relaunching as Administrator..." -ForegroundColor Yellow
     # Pass the parameters to the elevated process so they aren't lost
     $Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
-    if ($PSBoundParameters.Count -gt 0) {
-        foreach ($Key in $PSBoundParameters.Keys) {
-            $Arguments += " -$Key `"$($PSBoundParameters[$Key])`""
+    foreach ($Parameter in $PSBoundParameters.GetEnumerator()) {
+        if ($Parameter.Value -is [switch]) {
+            if ($Parameter.Value) { $Arguments += " -$($Parameter.Key)" }
+        }
+        else {
+            # Use escape characters to ensure paths with spaces survive the jump
+            $Arguments += " -$($Parameter.Key) `"$($Parameter.Value)`""
         }
     }
     
     try {
         Start-Process pwsh.exe -ArgumentList $Arguments -Verb RunAs -ErrorAction Stop
-    } catch {
+    }
+    catch {
         Start-Process powershell.exe -ArgumentList $Arguments -Verb RunAs
     }
     exit
@@ -36,12 +46,12 @@ function Install-Or-Update-Pwsh {
     # REGISTER_MANIFEST: Event logging
     # POWERSHELL_TELEMETRY_OPTOUT: Disables telemetry
     # INSTALLDIR: Sets the specific path
-    $msiArgs =  'ADD_EXPLORER_CONTEXT_MENU_OPEN_HERE=1 ' +
-                'ADD_FILE_CONTEXT_MENU_RUN_POWERSHELL7=1 ' +
-                'ENABLE_PSREMOTING=0 ' +
-                'REGISTER_MANIFEST=1 ' +
-                'POWERSHELL_TELEMETRY_OPTOUT=1 ' +
-                'INSTALLDIR="C:\Program Files\PowerShell\"'
+    $msiArgs =  "ADD_EXPLORER_CONTEXT_MENU_OPEN_HERE=1 " +
+                "ADD_FILE_CONTEXT_MENU_RUN_POWERSHELL7=1 " +
+                "ENABLE_PSREMOTING=0 " +
+                "REGISTER_MANIFEST=1 " +
+                "POWERSHELL_TELEMETRY_OPTOUT=1 " +
+                "INSTALLDIR=`"$powershellInstallDir\`""
 
     if (Get-Command winget -ErrorAction SilentlyContinue) {
         Write-Host "Processing via WinGet..." -ForegroundColor Gray
@@ -56,7 +66,7 @@ function Install-Or-Update-Pwsh {
 
         # Handle WinGet Result States
         if ($exitCode -eq 0 -or $exitCode -eq -1978335178-or $exitCode -eq -1978335189) {
-            Write-Host "[SUCCESS] PowerShell 7 is up to date at C:\Program Files\PowerShell\" -ForegroundColor Green
+            Write-Host "[SUCCESS] PowerShell 7 is up to date at $powershellInstallDir\" -ForegroundColor Green
             Write-Host "[CONFIG] Telemetry Disabled, Context Menus Added, PSRemoting Disabled." -ForegroundColor Gray
             
             # Use the variable to check if a reboot/restart is suggested in the text
@@ -89,7 +99,7 @@ function Install-Or-Update-Pwsh {
 
             # Exit code 0 is success, 1638 is "already installed"
             if ($process.ExitCode -eq 0 -or $process.ExitCode -eq 1638) {
-                Write-Host "[SUCCESS] PowerShell 7 provisioned via MSI at C:\Program Files\PowerShell\" -ForegroundColor Green
+                Write-Host "[SUCCESS] PowerShell 7 provisioned via MSI at $powershellInstallDir\" -ForegroundColor Green
                 Write-Host "[CONFIG] Telemetry Disabled, Context Menus Added, PSRemoting Disabled." -ForegroundColor Gray
             } else {
                 Write-Host "[ERROR] MSI failed with exit code: $($process.ExitCode)" -ForegroundColor Red
@@ -97,18 +107,21 @@ function Install-Or-Update-Pwsh {
         } catch {
             Write-Error "Fallback installation failed: $($_.Exception.Message)"
         } finally {
-            if (Test-Path $output) { Remove-Item $output -Force }
+            if (Test-Path $output) { Remove-Item $output -Force -ErrorAction SilentlyContinue }
         }
     }
     # --- Path Management: Add to END of Path if not present ---
-    $TargetDir = "C:\Program Files\PowerShell\7"
+    $TargetDir = $(Join-Path $powershellInstallDir "7")
     $RegPath = "System\CurrentControlSet\Control\Session Manager\Environment"
     $RegistryKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($RegPath, $true)
     $CurrentRawPath = $RegistryKey.GetValue("Path", "", [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
 
     if ($CurrentRawPath -notlike "*$TargetDir*") {
         Write-Host "[PATH] Appending PowerShell 7 to the end of System Path..." -ForegroundColor Cyan
-        $NewRawPath = $CurrentRawPath.TrimEnd(';') + ";$TargetDir"
+        
+        # Ensure we don't start with a semicolon if the path was somehow empty
+        $NewRawPath = ($CurrentRawPath + ";$TargetTag").Replace(";;;", ";;").Replace(";;", ";")
+
         $RegistryKey.SetValue("Path", $NewRawPath, [Microsoft.Win32.RegistryValueKind]::ExpandString)
     }
     $RegistryKey.Close()

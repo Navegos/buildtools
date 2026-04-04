@@ -1,15 +1,15 @@
 # Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:dep-ninja.ps1
+# file:dep-vcpkg.ps1
 
 param (
-    [Parameter(HelpMessage="Path for ninja storage", Mandatory=$false)]
-    [string]$ninjaInstallDir = "$env:LIBRARIES_PATH\ninja",
-
-    [Parameter(HelpMessage = "Force a full uninstallation of the local Ninja version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Path for vcpkg storage", Mandatory = $false)]
+    [string]$vcpkgInstallDir = "$env:LIBRARIES_PATH\vcpkg",
+    
+    [Parameter(HelpMessage = "Force a full uninstallation of the local vcpkg version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
     
-    [Parameter(HelpMessage = "Add's Ninja Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
+    [Parameter(HelpMessage = "Add's vcpkg Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
     [switch]$withMachineEnvironment
 )
 
@@ -34,14 +34,14 @@ else {
 }
 
 # 3. Delegation Logic
-$targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\dep-ninja.ps1"
+$targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\dep-vcpkg.ps1"
 
 if (Test-Path $targetScript) {
     Write-Host "[OS/ARCH] $platform $currentArch detected. Delegating..." -ForegroundColor Cyan
     
     # 1. Ensure the default path is captured if not explicitly provided by the user
-    if (-not $PSBoundParameters.ContainsKey('ninjaInstallDir')) {
-        $PSBoundParameters['ninjaInstallDir'] = $ninjaInstallDir
+    if (-not $PSBoundParameters.ContainsKey('vcpkgInstallDir')) {
+        $PSBoundParameters['vcpkgInstallDir'] = $vcpkgInstallDir
     }
     
     & $targetScript @PSBoundParameters

@@ -10,6 +10,16 @@ echo ============================================
 echo   Navegos Toolchain: Environment Setup
 echo ============================================
 
+if "%PROCESSOR_ARCHITECTURE%"=="ARM64" (
+    set "ARCH=arm64"
+) else if "%PROCESSOR_ARCHITECTURE%"=="AMD64" (
+    set "ARCH=x64"
+) else (
+    echo [ERROR] Unsupported architecture: !%PROCESSOR_ARCHITECTURE%!
+    pause
+    exit /b 1
+)
+
 :: 1. Setup Paths
 :: Keep SCRIPT_ROOT with backslashes for the 'if exist' check, then use for PowerShell
 set "CWD=%~dp0"

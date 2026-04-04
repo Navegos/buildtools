@@ -25,7 +25,7 @@ if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env
 $EnvironmentDir = "$env:ENVIRONMENT_PATH"
 
 # --- 1. Initialize Visual Studio 2026 Dev Environment ---
-$DevShellBootstrapScript = Join-Path $PSScriptRoot "devshell.ps1"
+$DevShellBootstrapScript = Join-Path $PSScriptRoot "dev-shell.ps1"
 if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
     Write-Error "Required dependency '$DevShellBootstrapScript' not found!"
     return
@@ -114,13 +114,13 @@ if (Test-Path $Source) {
 # --- 8. Clean & Build ---
 if (Test-Path $zlibInstallDir) {
     Write-Host "Wiping existing installation at $zlibInstallDir..." -ForegroundColor Yellow
-    Remove-Item -Recurse -Force $zlibInstallDir -ErrorAction SilentlyContinue
+    Remove-Item $zlibInstallDir -Recurse -Force -ErrorAction SilentlyContinue
 }
-New-Item -ItemType Directory -Path $zlibInstallDir -Force | Out-Null
+New-Item -ItemType Directory -Path $zlibInstallDir -Force -ErrorAction SilentlyContinue | Out-Null
 
 # Ensure fresh build directory
-if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir }
-New-Item -ItemType Directory -Path $BuildDir -Force | Out-Null
+if (Test-Path $BuildDir) { Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Path $BuildDir -Force -ErrorAction SilentlyContinue | Out-Null
 
 Write-Host "Configuring with Clang/Ninja..." -ForegroundColor Cyan
 cmake -G "Ninja" `
@@ -141,7 +141,7 @@ if ($LASTEXITCODE -ne 0) { Write-Error "zlib Build failed with exit code $LASTEX
 Write-Host "Successfully built and installed zlib to $zlibInstallDir!" -ForegroundColor Green
 
 # Cleanup temporary build debris
-Remove-Item -Recurse -Force $BuildDir
+Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue
 
 # Generate Environment Helper with Clean Paths
 $zlibInstallDir = $zlibInstallDir.TrimEnd('\')

@@ -1,15 +1,15 @@
 # Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:dep-ninja.ps1
+# file:dep-icu.ps1
 
 param (
-    [Parameter(HelpMessage="Path for ninja storage", Mandatory=$false)]
-    [string]$ninjaInstallDir = "$env:LIBRARIES_PATH\ninja",
-
-    [Parameter(HelpMessage = "Force a full uninstallation of the local Ninja version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Target vcpkg ICU triplet")]
+    [string]$Triplet = "x64-windows",
+    
+    [Parameter(HelpMessage = "Force a full uninstallation of the local ICU version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
     
-    [Parameter(HelpMessage = "Add's Ninja Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
+    [Parameter(HelpMessage = "Add's ICU Machine Environment Variables. Requires Machine Administatror Rights.", Mandatory = $false)]
     [switch]$withMachineEnvironment
 )
 
@@ -34,14 +34,14 @@ else {
 }
 
 # 3. Delegation Logic
-$targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\dep-ninja.ps1"
+$targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\dep-icu.ps1"
 
 if (Test-Path $targetScript) {
     Write-Host "[OS/ARCH] $platform $currentArch detected. Delegating..." -ForegroundColor Cyan
     
     # 1. Ensure the default path is captured if not explicitly provided by the user
-    if (-not $PSBoundParameters.ContainsKey('ninjaInstallDir')) {
-        $PSBoundParameters['ninjaInstallDir'] = $ninjaInstallDir
+    if (-not $PSBoundParameters.ContainsKey('Triplet')) {
+        $PSBoundParameters['Triplet'] = $Triplet
     }
     
     & $targetScript @PSBoundParameters

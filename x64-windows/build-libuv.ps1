@@ -25,7 +25,7 @@ if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env
 $EnvironmentDir = "$env:ENVIRONMENT_PATH"
 
 # --- 1. Initialize Visual Studio 2026 Dev Environment ---
-$DevShellBootstrapScript = Join-Path $PSScriptRoot "devshell.ps1"
+$DevShellBootstrapScript = Join-Path $PSScriptRoot "dev-shell.ps1"
 if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
     Write-Error "Required dependency '$DevShellBootstrapScript' not found!"
     return
@@ -114,13 +114,13 @@ if (Test-Path $Source) {
 # --- 8. Clean Final Destination ---
 if (Test-Path $libuvInstallDir) {
     Write-Host "Wiping existing installation..." -ForegroundColor Yellow
-    Remove-Item -Recurse -Force $libuvInstallDir -ErrorAction SilentlyContinue
+    Remove-Item $libuvInstallDir -Recurse -Force -ErrorAction SilentlyContinue
 }
-New-Item -ItemType Directory -Path $libuvInstallDir -Force | Out-Null
+New-Item -ItemType Directory -Path $libuvInstallDir -Force -ErrorAction SilentlyContinue | Out-Null
 
 # Ensure fresh build directory
-if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir }
-New-Item -ItemType Directory -Path $BuildDir -Force | Out-Null
+if (Test-Path $BuildDir) { Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Path $BuildDir -Force -ErrorAction SilentlyContinue | Out-Null
 
 # --- 9. STAGE 2: Build Libraries ---
 Write-Host "Building Libraries..." -ForegroundColor Cyan
@@ -147,7 +147,7 @@ if ($LASTEXITCODE -ne 0) { Write-Error "libuv Build failed with exit code $LASTE
 Write-Host "Successfully built and installed libuv to $libuvInstallDir!" -ForegroundColor Green
 
 # Cleanup temporary build debris
-Remove-Item -Recurse -Force $BuildDir
+Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue
 
 # Generate Environment Helper with Clean Paths
 $libuvInstallDir = $libuvInstallDir.TrimEnd('\')

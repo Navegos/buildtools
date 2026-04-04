@@ -25,7 +25,7 @@ if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env
 $EnvironmentDir = "$env:ENVIRONMENT_PATH"
 
 # --- 1. Initialize Visual Studio 2026 Dev Environment ---
-$DevShellBootstrapScript = Join-Path $PSScriptRoot "devshell.ps1"
+$DevShellBootstrapScript = Join-Path $PSScriptRoot "dev-shell.ps1"
 if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
     Write-Error "Required dependency '$DevShellBootstrapScript' not found!"
     return
@@ -127,15 +127,15 @@ if (Test-Path $Source) {
 # --- 8. Clean Final Destination ---
 if (Test-Path $libxml2InstallDir) {
     Write-Host "Wiping existing installation at $libxml2InstallDir..." -ForegroundColor Yellow
-    Remove-Item -Recurse -Force $libxml2InstallDir -ErrorAction SilentlyContinue
+    Remove-Item $libxml2InstallDir -Recurse -Force -ErrorAction SilentlyContinue
 }
-New-Item -ItemType Directory -Path $libxml2InstallDir -Force | Out-Null
+New-Item -ItemType Directory -Path $libxml2InstallDir -Force -ErrorAction SilentlyContinue | Out-Null
 
 # Ensure fresh build directory
-if (Test-Path $BuildDirShared) { Remove-Item -Recurse -Force $BuildDirShared }
-if (Test-Path $BuildDirStatic) { Remove-Item -Recurse -Force $BuildDirStatic }
-New-Item -ItemType Directory -Path $BuildDirShared -Force | Out-Null
-New-Item -ItemType Directory -Path $BuildDirStatic -Force | Out-Null
+if (Test-Path $BuildDirShared) { Remove-Item $BuildDirShared -Recurse -Force -ErrorAction SilentlyContinue }
+if (Test-Path $BuildDirStatic) { Remove-Item $BuildDirStatic -Recurse -Force -ErrorAction SilentlyContinue }
+New-Item -ItemType Directory -Path $BuildDirShared -Force -ErrorAction SilentlyContinue | Out-Null
+New-Item -ItemType Directory -Path $BuildDirStatic -Force -ErrorAction SilentlyContinue | Out-Null
 
 # --- Dependencies: ---
 [string]$Rootlibxml2InstallDir = Split-Path -Path $libxml2InstallDir -Parent
@@ -269,7 +269,7 @@ if ($LASTEXITCODE -ne 0) { Write-Error "libxml2 Static Build failed with exit co
 Write-Host "Applying 's' suffix to static libs..." -ForegroundColor Gray
 Get-ChildItem -Path "$libxml2InstallDir\lib\*.lib" | ForEach-Object {
     $newName = $_.BaseName + "s" + $_.Extension
-    Move-Item -Path $_.FullName -Destination (Join-Path $_.DirectoryName $newName) -Force
+    Move-Item -Path $_.FullName -Destination (Join-Path $_.DirectoryName $newName) -Force -ErrorAction SilentlyContinue
     Write-Host "  -> $newName" -ForegroundColor DarkGray
 }
 
@@ -319,8 +319,8 @@ foreach ($BinPath in $DependencyBins) {
 Write-Host "Successfully built and installed libxml2 to $libxml2InstallDir!" -ForegroundColor Green
 
 # Cleanup temporary build debris
-Remove-Item -Recurse -Force $BuildDirShared
-Remove-Item -Recurse -Force $BuildDirStatic
+Remove-Item $BuildDirShared -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item $BuildDirStatic -Recurse -Force -ErrorAction SilentlyContinue
 
 # Generate Environment Helper with Clean Paths
 $libxml2InstallDir = $libxml2InstallDir.TrimEnd('\')
