@@ -3,16 +3,16 @@
 # file:x64-windows/adduserpaths.ps1
 
 param (
-    [Parameter(HelpMessage="Base path for library storage", Mandatory=$false)]
+    [Parameter(HelpMessage = "Base path for library storage", Mandatory = $false)]
     [string]$LibrariesDir = "C:\libs",
 
-    [Parameter(HelpMessage="Base path for environment-specific configs", Mandatory=$false)]
+    [Parameter(HelpMessage = "Base path for environment-specific configs", Mandatory = $false)]
     [string]$EnvironmentDir = "C:\libs\environment",
 
-    [Parameter(HelpMessage="Base path for binaries", Mandatory=$false)]
+    [Parameter(HelpMessage = "Base path for binaries", Mandatory = $false)]
     [string]$BinariesDir = "C:\libs\binaries",
     
-    [Parameter(HelpMessage="Base path for build tools", Mandatory=$false)]
+    [Parameter(HelpMessage = "Base path for build tools", Mandatory = $false)]
     [string]$BuildToolsDir = (Split-Path -Path $PSScriptRoot -Parent) # BuildTools root folder
 )
 
@@ -82,14 +82,14 @@ foreach ($Entry in $EnvMapping.GetEnumerator())
     # 1. Physical Directory Management
     if (-not (Test-Path -Path $TargetPath))
     {
-        New-Item -ItemType Directory -Path $TargetPath -Force -ErrorAction SilentlyContinue | Out-Null
+        New-Item -Path $TargetPath -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
         Write-Host "[NEW] Created directory: $TargetPath" -ForegroundColor Cyan
     } else {
         Write-Host "[OK] Directory exists: $TargetPath" -ForegroundColor DarkGray
     }
 
     # 2. Environment Variable Management
-    $VarNameValue = (Get-Item "Env:\$VarName").Value
+    $VarNameValue = (Get-Item "Env:\$VarName" -ErrorAction SilentlyContinue).Value
 
     # Logic: If missing OR pointing to the wrong place, update it.
     if ([string]::IsNullOrWhitespace($VarNameValue) -or -not (Test-Path "Env:\$VarName") -or $VarNameValue -ne $TargetPath)
@@ -141,10 +141,10 @@ foreach ($Entry in $VEnvMapping.GetEnumerator())
     $VarName = $Entry.Key
     $TargetPath = $Entry.Value
 
-    # 2. Environment Variable Management
-    $VarNameValue = (Get-Item "Env:\$VarName").Value
+    # Check if already in environment or default Whitespace.
+    $VarNameValue = (Get-Item "Env:\$VarName" -ErrorAction SilentlyContinue).Value
     
-    # If missing.
+    # If missing or default Whitespace.
     if ([string]::IsNullOrWhitespace($VarNameValue))
     {
         # Update Current Process

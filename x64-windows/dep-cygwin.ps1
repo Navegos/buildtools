@@ -3,15 +3,19 @@
 # file:x64-windows/dep-cygwin.ps1
 
 param (
-    [Parameter(HelpMessage="Path for cygwin storage", Mandatory=$false)]
+    [Parameter(HelpMessage = "Path for cygwin storage", Mandatory = $false)]
     [string]$cygwinInstallDir = "$env:LIBRARIES_PATH\cygwin",
     
-    [Parameter(HelpMessage = "Force a full uninstallation of the local Cygwin version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Force a full purge of the local Cygwin version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
     
     [Parameter(HelpMessage = "Add's Cygwin Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
     [switch]$withMachineEnvironment
 )
+
+# Capture parameters
+$CygwinWithMachineEnvironment = $withMachineEnvironment
+$CygwinForceCleanup = $forceCleanup
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
@@ -23,13 +27,15 @@ $EnvironmentDir = "$env:ENVIRONMENT_PATH"
 
 $setupExe = Join-Path $env:TEMP "cygwin-setup.exe"
 $cygwinBinPath = Join-Path $cygwinInstallDir "bin"
+$cygwinEnvScript = Join-Path $EnvironmentDir "env-cygwin.ps1"
+$cygwinMachineEnvScript = Join-Path $EnvironmentDir "machine-env-cygwin.ps1"
 
 # --- 1. Cleanup Mechanism ---
 function Invoke-cygwinVersionPurge {
     param ([string]$InstallPath)
     Write-Host "--- Initiating cygwin Purge ---" -ForegroundColor Cyan
 
-    if ($withMachineEnvironment)
+    if ($CygwinWithMachineEnvironment)
     {
         $cygwinCleanMachineEnvScript = Join-Path $env:TEMP "clean-machine-env-cygwin.ps1"
 
@@ -116,16 +122,30 @@ Write-Host "[REMOVED] ($TargetScope) all '*$cygwinroot*' removed from TOOLS_PATH
         Remove-Item $cygwinCleanMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    # 2. Filesystem Nuke (Requires checking for locked files)
+    # 2. Filesystem Clean (Requires checking for locked files)
+    # delete everithing we create don't fail later
+    if (Test-Path $cygwinEnvScript) {
+        Write-Host "  [DELETING] $cygwinEnvScript" -ForegroundColor Yellow
+        Remove-Item $cygwinEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $cygwinMachineEnvScript) {
+        Write-Host "  [DELETING] $cygwinMachineEnvScript" -ForegroundColor Yellow
+        Remove-Item $cygwinMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    }
     if (Test-Path $InstallPath) {
         Write-Host "  [DELETING] $InstallPath" -ForegroundColor Yellow
         Remove-Item $InstallPath -Recurse -Force -ErrorAction SilentlyContinue
     }
+    
+    # remove local Env variables for current session
+    Get-ChildItem Env:\CYGWIN_PATH* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CYGWIN_ROOT* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CYGWIN_BIN* | Remove-Item -ErrorAction SilentlyContinue
 
     Write-Host "--- cygwin Purge Complete ---" -ForegroundColor Green
 }
 
-if ($forceCleanup) {
+if ($CygwinForceCleanup) {
     Invoke-cygwinVersionPurge -InstallPath $cygwinInstallDir
 }
 
@@ -148,7 +168,7 @@ if ($isInstalled) {
     Write-Host "Cygwin detected. Checking for missing packages and updates..." -ForegroundColor Cyan
 } else {
     Write-Host "Cygwin not found. Starting fresh installation..." -ForegroundColor Yellow
-    if (!(Test-Path $cygwinInstallDir)) { New-Item -Path $cygwinInstallDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null }
+    if (-not (Test-Path $cygwinInstallDir)) { New-Item -Path $cygwinInstallDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null }
 }
 
 # 4. Download/Update Installer
@@ -173,9 +193,6 @@ $process = Start-Process -FilePath $setupExe -ArgumentList $installArgs -Wait -N
 if ($process.ExitCode -eq 0 -and (Test-Path (Join-Path $cygwinInstallDir "bin\bash.exe"))) {
     Write-Host "Cygwin is up to date with all required packages." -ForegroundColor Green
     
-    # 6. Generate/Update Environment Helper
-    $cygwinEnvScript = Join-Path $EnvironmentDir "env-cygwin.ps1"
-    
     # Generate Environment Helper with Clean Paths
     $cygwinBinPath = $cygwinBinPath.TrimEnd('\')
     $cygwinInstallDir = $cygwinInstallDir.TrimEnd('\')
@@ -188,7 +205,7 @@ $cygwinbin = "VALUE_BIN_PATH"
 $env:CYGWIN_PATH = $cygwinroot
 $env:CYGWIN_ROOT = $cygwinroot
 $env:CYGWIN_BIN = $cygwinbin
-"$cygwinroot", "$cygwinbin" | ForEach-Object { if ($env:PATH -notlike "*$_*") { $env:PATH = $_ + ";" + $env:PATH } }
+"$cygwinroot", "$cygwinbin" | ForEach-Object { if ($env:PATH -notlike "*$_*") { $env:PATH = $_ + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") } }
 Write-Host "CYGWIN Environment Loaded (Bin: $cygwinbin)" -ForegroundColor Green
 Write-Host "CYGWIN_ROOT: $env:CYGWIN_ROOT" -ForegroundColor Gray
 '@  -replace "VALUE_BIN_PATH", $cygwinBinPath `
@@ -203,9 +220,8 @@ Write-Host "CYGWIN_ROOT: $env:CYGWIN_ROOT" -ForegroundColor Gray
     }
     Write-Host "Session updated with Cygwin binaries." -ForegroundColor Gray
 
-    if ($withMachineEnvironment)
+    if ($CygwinWithMachineEnvironment)
     {
-        $cygwinMachineEnvScript = Join-Path $EnvironmentDir "machine-env-cygwin.ps1"
         # Generating Machine Environment wich add to the persist registry machine Environment
         $MachineEnvContent = @'
 # Cygwin Machine Environment Setup

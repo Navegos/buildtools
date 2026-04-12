@@ -3,17 +3,23 @@
 # file:build-ninja.ps1
 
 param (
-    [Parameter(HelpMessage="Base workspace path", Mandatory=$false)]
-    [string]$WorkspacePath = "",
+    [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
+    [string]$workspacePath = $null,
 
-    [Parameter(HelpMessage="ninja git repo url", Mandatory=$false)]
-    [string]$GitUrl = "https://github.com/Navegos/ninja.git",
+    [Parameter(HelpMessage = "ninja git repo url", Mandatory = $false)]
+    [string]$gitUrl = "https://github.com/ninja-build/ninja.git",
     
-    [Parameter(HelpMessage="ninja git branch to sync from", Mandatory=$false)]
-    [string]$GitBranch = "master",
+    [Parameter(HelpMessage = "ninja git branch to sync from", Mandatory = $false)]
+    [string]$gitBranch = "master",
 
-    [Parameter(HelpMessage="Path for ninja storage", Mandatory=$false)]
-    [string]$ninjaInstallDir = "$env:LIBRARIES_PATH\ninja"
+    [Parameter(HelpMessage = "Path for ninja storage", Mandatory = $false)]
+    [string]$ninjaInstallDir = $null,
+    
+    [Parameter(HelpMessage = "Force a full purge of the local Ninja version before continuing", Mandatory = $false)]
+    [switch]$forceCleanup,
+    
+    [Parameter(HelpMessage = "Add's Ninja Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
+    [switch]$withMachineEnvironment
 )
 
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
@@ -34,19 +40,33 @@ if (-not $archFolder) {
 }
 
 # 2. Platform Detection
-if ($IsWindows) { $platform = "windows" }
-elseif ($IsLinux) { $platform = "linux" }
+if ($IsWindows) {
+    $platform = "windows"
+    if ([string]::IsNullOrWhitespace($ninjaInstallDir)) { $ninjaInstallDir = "$env:LIBRARIES_PATH\ninja" }
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\build-ninja.ps1"
+}
+elseif ($IsLinux) {
+    $platform = "linux"
+    if ([string]::IsNullOrWhitespace($ninjaInstallDir)) { $ninjaInstallDir = "$env:LIBRARIES_PATH/ninja" }
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)/build-ninja.ps1"
+}
 else {
     Write-Error "Unsupported Operating System."
     return
 }
 
-# 3. Delegation Logic
-$targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\build-ninja.ps1"
-
 if (Test-Path $targetScript) {
     Write-Host "[OS/ARCH] $platform $currentArch detected. Delegating..." -ForegroundColor Cyan
     
+    # 1. Ensure the default path is captured if not explicitly provided by the user
+    $DirParams = 'workspacePath', 'gitUrl', 'gitBranch', 'ninjaInstallDir'
+    foreach ($ParamName in $DirParams) {
+        if (-not $PSBoundParameters.ContainsKey($ParamName)) {
+            # Dynamically get the value of the local variable with the same name
+            $PSBoundParameters[$ParamName] = Get-Variable -Name $ParamName -ValueOnly
+        }
+    }
+
     & $targetScript @PSBoundParameters
 }
 else {

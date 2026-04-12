@@ -3,18 +3,24 @@
 # file:x64-windows/build-ccache.ps1
 
 param (
-    [Parameter(HelpMessage="Base workspace path", Mandatory=$false)]
-    [string]$WorkspacePath = "",
+    [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
+    [string]$workspacePath = $null,
 
-    [Parameter(HelpMessage="ccache git repo url", Mandatory=$false)]
-    [string]$GitUrl = "https://github.com/Navegos/ccache.git",
+    [Parameter(HelpMessage = "ccache git repo url", Mandatory = $false)]
+    [string]$gitUrl = "https://github.com/Navegos/ccache.git",
     
-    [Parameter(HelpMessage="ccache git branch to sync from", Mandatory=$false)]
-    [string]$GitBranch = "master",
+    [Parameter(HelpMessage = "ccache git branch to sync from", Mandatory = $false)]
+    [string]$gitBranch = "master",
 
-    [Parameter(HelpMessage="Path for ccache storage", Mandatory=$false)]
+    [Parameter(HelpMessage = "Path for ccache storage", Mandatory = $false)]
     [string]$ccacheInstallDir = "$env:LIBRARIES_PATH\ccache"
 )
+
+# Capture parameters
+$ccacheWorkspacePath = $workspacePath
+$ccacheGitUrl = $gitUrl
+$ccacheGitBranch = $gitBranch
+$ccacheWithMachineEnvironment = $withMachineEnvironment
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
@@ -37,7 +43,7 @@ if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
     return
 }
 
-$RootPath = if ([string]::IsNullOrWhitespace($WorkspacePath)) { Get-Location } else { $WorkspacePath }
+$RootPath = if ([string]::IsNullOrWhitespace($ccacheWorkspacePath)) { Get-Location } else { $ccacheWorkspacePath }
 
 # --- 2. Initialize git environment if missing ---
 if (!(Get-Command git -ErrorAction SilentlyContinue)) {
@@ -100,9 +106,11 @@ Push-Location $RootPath
 
 $Source = Join-Path $RootPath "ccache"
 $BuildDir   = Join-Path $Source "build_dir"  # Nested inside source
-$RepoUrl    = $GitUrl
-$Branch     = $GitBranch
+$RepoUrl    = $ccacheGitUrl
+$Branch     = $ccacheGitBranch
 $CMakeSource = $Source
+
+$ccacheEnvScript = Join-Path $EnvironmentDir "env-ccache.ps1"
 
 # --- 7. Source Management ---
 if (Test-Path $Source) {
@@ -122,23 +130,26 @@ if (Test-Path $ccacheInstallDir) {
     Write-Host "Wiping existing installation at $ccacheInstallDir..." -ForegroundColor Yellow
     Remove-Item $ccacheInstallDir -Recurse -Force -ErrorAction SilentlyContinue
 }
-New-Item -ItemType Directory -Path $ccacheInstallDir -Force -ErrorAction SilentlyContinue | Out-Null
+New-Item -Path $ccacheInstallDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
 
 # Ensure fresh build directory
 if (Test-Path $BuildDir) { Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue }
-New-Item -ItemType Directory -Path $BuildDir -Force -ErrorAction SilentlyContinue | Out-Null
+New-Item -Path $BuildDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
 
 Write-Host "Configuring with Clang/Ninja..." -ForegroundColor Cyan
 cmake -G "Ninja" `
     -S "$CMakeSource" `
     -B "$BuildDir" `
+    -DCMAKE_POLICY_DEFAULT_CMP0091=NEW `
+    -DCMAKE_POLICY_DEFAULT_CMP0109=NEW `
     -DCMAKE_CXX_COMPILER="clang++" `
     -DCMAKE_INSTALL_PREFIX="$ccacheInstallDir" `
     -DCMAKE_BUILD_TYPE=Release `
     -DENABLE_TESTING=OFF `
     -DREDIS_STORAGE_BACKEND=ON `
     -DHTTP_STORAGE_BACKEND=ON `
-    -DCMAKE_CXX_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1"
+    -DCMAKE_CXX_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
+    --no-warn-unused-cli
 
 if ($LASTEXITCODE -ne 0) { Write-Error "ccache CMake configuration failed."; Pop-Location; return }
 
@@ -158,7 +169,6 @@ $ccacheBinPath = Join-Path $ccacheInstallDir "bin"
 
 # --- 9. Create Environment Helper ---
 Write-Host "Generating environment helper script..." -ForegroundColor Cyan
-$ccacheEnvScript = Join-Path $EnvironmentDir "env-ccache.ps1"
 $EnvContent = @'
 # CCACHE Environment Setup
 $ccachebin = "VALUE_BIN_PATH"
@@ -166,7 +176,7 @@ $ccacheroot = "VALUE_ROOT_PATH"
 $env:CCACHE_PATH = $ccacheroot
 $env:CCACHE_ROOT = $ccacheroot
 $env:CCACHE_BIN = $ccachebin
-if ($env:PATH -notlike "*$ccachebin*") { $env:PATH = $ccachebin + ";" + $env:PATH }
+if ($env:PATH -notlike "*$ccachebin*") { $env:PATH = $ccachebin + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") }
 Write-Host "CCACHE Environment Loaded." -ForegroundColor Green
 Write-Host "CCACHE_ROOT: $env:CCACHE_ROOT" -ForegroundColor Gray
 '@ -replace "VALUE_BIN_PATH", $ccacheBinPath -replace "VALUE_ROOT_PATH", $ccacheInstallDir
@@ -183,4 +193,4 @@ Write-Host "ccache Version: $(ccache --version | Select-Object -First 1)" -Foreg
 
 # --- Return to Start ---
 Pop-Location
-Write-Host "Done! and returned to: $(Get-Location)" -ForegroundColor Gray
+Write-Host "Successfully Done! and returned to: $(Get-Location)" -ForegroundColor DarkGreen

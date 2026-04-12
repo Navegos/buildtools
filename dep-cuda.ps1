@@ -4,7 +4,7 @@
 
 param (
     [Parameter(HelpMessage = "Base path for cuda storage like path\cuda", Mandatory = $false)]
-    [string]$cudaInstallDir = "$env:LIBRARIES_PATH\cuda",
+    [string]$cudaInstallDir = $null,
 
     [Parameter(HelpMessage = "Minimum Fallback CUDA Version", Mandatory = $false)]
     [string]$cudaVersion = "13.2.0",
@@ -24,7 +24,7 @@ param (
     [Parameter(HelpMessage = "Full link for TensorRT package", Mandatory = $false)]
     [string]$tensorrtLink = "https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/10.16.0/zip/TensorRT-10.16.0.72.Windows.amd64.cuda-13.2.zip",
     
-    [Parameter(HelpMessage = "Force a full uninstallation of the local CUDA version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Force a full purge of the local CUDA version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
 
     [Parameter(HelpMessage = "Don't Update CUDA Toolkit and libs if update has found", Mandatory = $false)]
@@ -47,15 +47,20 @@ if (-not $archFolder) {
 }
 
 # 2. Platform Detection
-if ($IsWindows) { $platform = "windows" }
-elseif ($IsLinux) { $platform = "linux" }
+if ($IsWindows) {
+    $platform = "windows"
+    if ([string]::IsNullOrWhitespace($cudaInstallDir)) { $cudaInstallDir = "$env:LIBRARIES_PATH\cuda" }
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\dep-cuda.ps1"
+}
+elseif ($IsLinux) {
+    $platform = "linux"
+    if ([string]::IsNullOrWhitespace($cudaInstallDir)) { $cudaInstallDir = "$env:LIBRARIES_PATH/cuda" }
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)/dep-cuda.ps1"
+}
 else {
     Write-Error "Unsupported Operating System."
     return
 }
-
-# 3. Delegation Logic
-$targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\dep-cuda.ps1"
 
 if (Test-Path $targetScript) {
     Write-Host "[OS/ARCH] $platform $currentArch detected. Delegating..." -ForegroundColor Cyan

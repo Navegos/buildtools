@@ -1,24 +1,24 @@
 # Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:build-cmake.ps1
+# file:build-lz4.ps1
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
     [string]$workspacePath = $null,
 
-    [Parameter(HelpMessage = "cmake git repo url", Mandatory = $false)]
-    [string]$gitUrl = "https://github.com/Kitware/CMake.git",
+    [Parameter(HelpMessage = "lz4 git repo url", Mandatory = $false)]
+    [string]$gitUrl = "https://github.com/lz4/lz4.git",
     
-    [Parameter(HelpMessage = "cmake git branch to sync from", Mandatory = $false)]
-    [string]$gitBranch = "master",
+    [Parameter(HelpMessage = "lz4 git branch to sync from", Mandatory = $false)]
+    [string]$gitBranch = "dev",
 
-    [Parameter(HelpMessage = "Path for cmake storage", Mandatory = $false)]
-    [string]$cmakeInstallDir = $null,
+    [Parameter(HelpMessage = "Path for lz4 library storage", Mandatory = $false)]
+    [string]$lz4InstallDir = $null,
     
-    [Parameter(HelpMessage = "Force a full purge of the local CMake version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Force a full purge of the local lz4 version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
     
-    [Parameter(HelpMessage = "Add's CMake Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
+    [Parameter(HelpMessage = "Add's lz4 Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
     [switch]$withMachineEnvironment
 )
 
@@ -42,13 +42,13 @@ if (-not $archFolder) {
 # 2. Platform Detection
 if ($IsWindows) {
     $platform = "windows"
-    if ([string]::IsNullOrWhitespace($cmakeInstallDir)) { $cmakeInstallDir = "$env:LIBRARIES_PATH\cmake" }
-    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\build-cmake.ps1"
+    if ([string]::IsNullOrWhitespace($lz4InstallDir)) { $lz4InstallDir = "$env:LIBRARIES_PATH\lz4" }
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\build-lz4.ps1"
 }
 elseif ($IsLinux) {
     $platform = "linux"
-    if ([string]::IsNullOrWhitespace($cmakeInstallDir)) { $cmakeInstallDir = "$env:LIBRARIES_PATH/cmake" }
-    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)/build-cmake.ps1"
+    if ([string]::IsNullOrWhitespace($lz4InstallDir)) { $lz4InstallDir = "$env:LIBRARIES_PATH/lz4" }
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)/build-lz4.ps1"
 }
 else {
     Write-Error "Unsupported Operating System."
@@ -59,7 +59,7 @@ if (Test-Path $targetScript) {
     Write-Host "[OS/ARCH] $platform $currentArch detected. Delegating..." -ForegroundColor Cyan
     
     # 1. Ensure the default path is captured if not explicitly provided by the user
-    $DirParams = 'workspacePath', 'gitUrl', 'gitBranch', 'cmakeInstallDir'
+    $DirParams = 'workspacePath', 'gitUrl', 'gitBranch', 'lz4InstallDir'
     foreach ($ParamName in $DirParams) {
         if (-not $PSBoundParameters.ContainsKey($ParamName)) {
             # Dynamically get the value of the local variable with the same name

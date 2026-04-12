@@ -3,18 +3,26 @@
 # file:x64-windows/dep-python.ps1
 
 param (
-    [Parameter(HelpMessage="Path for python storage", Mandatory=$false)]
+    [Parameter(HelpMessage = "Path for python storage", Mandatory = $false)]
     [string]$pythonInstallDir = "$env:LIBRARIES_PATH\python",
     
-    [Parameter(HelpMessage="Python Version", Mandatory=$false)]
-    [string]$pythonVersion = "3.14.3",
+    [Parameter(HelpMessage = "Python Version", Mandatory = $false)]
+    [string]$pythonVersion = "3.14.4",
     
-    [Parameter(HelpMessage = "Force a full uninstallation of the local Python version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Force a full purge of the local Python version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
+
+    [Parameter(HelpMessage = "Don't Update Python and scripts packages if update has found", Mandatory = $false)]
+    [switch]$dontUpdate,
     
     [Parameter(HelpMessage = "Add's Python Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
     [switch]$withMachineEnvironment
 )
+
+# Capture parameters
+$PythonWithMachineEnvironment = $withMachineEnvironment
+$PythonDontUpdate = $dontUpdate
+$PythonForceCleanup = $forceCleanup
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
@@ -30,12 +38,24 @@ $GlobalBinDir = "$env:BINARIES_PATH"
 $pythontools = @("python.exe", "pythonw.exe")
 foreach ($pythontool in $pythontools) {
     $target = Join-Path $GlobalBinDir $pythontool
-    if (Test-Path $target) { Remove-Item $target -Force -ErrorAction SilentlyContinue }
+    if (Test-Path $target) {
+        Remove-Item $target -Force -ErrorAction SilentlyContinue;
+    }
+    if ($pythontool -eq "python.exe") {
+        $target = Join-Path $GlobalBinDir "python3.exe"
+        if (Test-Path $target) {
+            Remove-Item $target -Force -ErrorAction SilentlyContinue;
+        }
+    }
 }
 $pythonBinPath = $pythonInstallDir
 $pythonExePath = Join-Path $pythonInstallDir "python.exe"
 $pythonScriptsPath = Join-Path $pythonInstallDir "Scripts"
 $versionFile = Join-Path $pythonInstallDir "version.json"
+$pipExe = Join-Path $pythonScriptsPath "pip.exe"
+$uvExe = Join-Path $pythonScriptsPath "uv.exe"
+$pythonEnvScript = Join-Path $EnvironmentDir "env-python.ps1"
+$pythonMachineEnvScript = Join-Path $EnvironmentDir "machine-env-python.ps1"
 
 # Version Detection
 $remoteVersion = $pythonVersion # Default to the param version. We don't whant to break user python scripts versions requirements
@@ -44,6 +64,18 @@ $zipName = "python-$pythonVersion-amd64.zip"
 $url = "https://www.python.org/ftp/python/$pythonVersion/$zipName"
 $updated_at = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
 $tagCommit = "N/A" # Python FTP doesn't provide easy commit hashes via URL
+$localVersion = "0.0.0"
+$rawVersion = "0.0.0"
+$versionInfo = @{
+    url        = $url;
+    tag_name   = $tag_name;
+    commit     = $tagCommit;
+    version    = $localVersion;
+    rawversion = $rawVersion;
+    date       = (Get-Date).ToString("yyyy-MM-dd");
+    updated_at = $updated_at;
+    type       = "rel_dist";
+}
 
 # Verify if the version exists (Head request)
 try {
@@ -62,7 +94,7 @@ function Invoke-PythonVersionPurge {
     param ([string]$InstallPath)
     Write-Host "--- Initiating Python Purge ---" -ForegroundColor Cyan
 
-    if ($withMachineEnvironment)
+    if ($PythonWithMachineEnvironment)
     {
         $pythonCleanMachineEnvScript = Join-Path $env:TEMP "clean-machine-env-python.ps1"
 
@@ -149,17 +181,30 @@ Write-Host "[REMOVED] ($TargetScope) all '*$pythonroot*' removed from TOOLS_PATH
         Remove-Item $pythonCleanMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    # 2. Filesystem Nuke (Requires checking for locked files)
+    # 2. Filesystem Clean (Requires checking for locked files)
+    # delete everithing we create don't fail later
+    if (Test-Path $pythonEnvScript) {
+        Write-Host "  [DELETING] $pythonEnvScript" -ForegroundColor Yellow
+        Remove-Item $pythonEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $pythonMachineEnvScript) {
+        Write-Host "  [DELETING] $pythonMachineEnvScript" -ForegroundColor Yellow
+        Remove-Item $pythonMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    }
     if (Test-Path $InstallPath) {
         Write-Host "  [DELETING] $InstallPath" -ForegroundColor Yellow
         Remove-Item $InstallPath -Recurse -Force -ErrorAction SilentlyContinue
     }
+    
+    # remove local Env variables for current session
+    Get-ChildItem Env:\PYTHON_PATH* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\PYTHON_ROOT* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\PYTHON_BIN* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\PYTHON_SCRIPTS* | Remove-Item -ErrorAction SilentlyContinue
 
     Write-Host "--- Python Purge Complete ---" -ForegroundColor Green
 }
 
-$localVersion = "0.0.0"
-$rawVersion = "0.0.0"
 if (Test-Path $pythonExePath) {
     $rawVersion = (& $pythonExePath --version | Select-Object -First 1).Trim()
     if ($rawVersion -match 'Python\s+(\d+\.\d+\.\d+)') { $localVersion = $Matches[1] }
@@ -169,17 +214,24 @@ if (Test-Path $versionFile) {
     $localVersion = (Get-Content $versionFile | ConvertFrom-Json).version
 }
 
-if ($forceCleanup) {
-    Invoke-PythonVersionPurge -InstallPath $pythonInstallDir
-    # Reset trackers to force a fresh install
-    $localVersion = "0.0.0"
-}
-
 # --- 2. Install or Skip ---
 $vLocal = [version]$localVersion
 $vRemote = [version]$remoteVersion
 
-if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
+$pipAvailable = $false
+$uvAvailable = $false    
+
+if ($PythonForceCleanup) {
+    Write-Host "[FORCE] Manual cleanup requested for version $localVersion..." -ForegroundColor Magenta
+
+    Invoke-PythonVersionPurge -InstallPath $pythonInstallDir
+
+    # Reset local version tracker so the installer knows to proceed with a fresh deployment
+    $localVersion = "0.0.0"
+    $vLocal = [version]"0.0.0"
+}
+
+if (($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") -or ($PythonDontUpdate -and -not $PythonForceCleanup)) {
     Write-Host "[SKIP] Python $localVersion is already installed and up to date at: $pythonExePath" -ForegroundColor Green
     Write-Host "Python Version: $(& $pythonExePath --version | Select-Object -First 1)" -ForegroundColor Gray
 
@@ -201,71 +253,188 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
         }
         $versionInfo | ConvertTo-Json | Out-File -FilePath $versionFile -Encoding utf8 -Force
     }
+    
+    if (Test-Path $pipExe) {
+        $pipAvailable = $true
+    }
+    if (Test-Path $uvExe) {
+        $uvAvailable = $true
+    }
 } else {
     Write-Host "[UPDATE] Local: $localVersion -> Remote: $remoteVersion" -ForegroundColor Yellow
 
-    # TODO: I we are upgrading existing installation, compare python Major, Minor Version from local and remote.
-    # TODO: If Versions missmatch warn user that upgrading renders is scrypt package's incompatible and broken.
-    # TODO: If user still whants to upgrade save all scrypt package's to requirements.txt ad requirements.json.
-    # TODO: Remove pythonInstallDir and create new one.
-    # TODO: Install the new python.
-    # TODO: Test requirements are compatible for install and install compatible one's.
-    # TODO: Save incompatible one's to incompatibles.txt ad incompatibles.json, and inform the user to see incompatibles if he wants to install manually later on.
-    if (!(Test-Path $pythonInstallDir)) { New-Item -Path $pythonInstallDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null }
+    # --- 1. Version Comparison & Package Inventory ---
+    $requirementsFile = Join-Path $env:TEMP "python-$localVersion-migration-requirements.txt"
+    $incompatibleFile = Join-Path $pythonInstallDir "incompatibles.json"
+    $versionMissMatchUpgrade = $false
+    $proceedWithInstall = $false
+    $venvTempBackupDir = Join-Path $env:TEMP "venv-backups"
+    $venvpathsLog = Join-Path $venvTempBackupDir "paths.log"
 
-    # 4. Get from the official site
-    try {
-        $zipPath = Join-Path $env:TEMP $zipName
+    if ($localVersion -ne "0.0.0" -and ($vLocal.Major -ne $vRemote.Major -or $vLocal.Minor -ne $vRemote.Minor)) {
+        Write-Warning "Major/Minor version mismatch detected ($localVersion -> $remoteVersion)."
+        Write-Warning "Upgrading will render your current site-packages incompatible and broken."
         
-        Write-Host "Downloading $zipName..." -ForegroundColor Cyan
-        Invoke-WebRequest -Uri $url -Outfile $zipPath
+        $choice = Read-Host "Do you want to proceed with a clean upgrade? This will attempt to re-install packages using uv. (y/n)"
+        if ($choice -match "^[yY]$") {
+            $versionMissMatchUpgrade = $true
+            
+            # User said YES: Prepare for migration
+            if (Test-Path $pythonExePath) {
+                try {
+                    # Export requirements before we nuke the folder
+                    Write-Host "Backing up package list to $requirementsFile..." -ForegroundColor Gray
+                    # Use pip freeze to get a clean requirements list
+                    if (Test-Path $uvExe) {
+                        & $pythonExePath -m uv pip freeze | Out-File -FilePath $requirementsFile -Encoding utf8
+                    } else {
+                        & $pythonExePath -m pip freeze | Out-File -FilePath $requirementsFile -Encoding utf8
+                    }
+                    $proceedWithInstall = $true
+                }
+                catch {
+                    Write-Warning "Could not export package list. You may need to reinstall python requirements packages manually."
+                }
+            }
+        }
+        
+        ## --- Multi-Venv Backup Phase (Smart Version Detection) ---
+        Write-Host "[BACKUP] Scanning $pythonInstallDir for virtual environments..." -ForegroundColor Cyan
+
+        # Find all directories containing 'pyvenv.cfg' (the marker of a venv)
+        $foundVenvs = Get-ChildItem -Path $pythonInstallDir -Recurse -Filter "pyvenv.cfg" -ErrorAction SilentlyContinue
+
+        if ($null -ne $foundVenvs -and $foundVenvs.Count -gt 0) {
+            Write-Host "[FOUND] $($foundVenvs.Count) environments to process." -ForegroundColor Green
+            
+            if (-not (Test-Path $venvTempBackupDir)) { New-Item -Path $venvTempBackupDir -ItemType Directory -Force -ErrorAction SilentlyContinue }
+
+            foreach ($cfgFile in $foundVenvs) {
+                $venvRoot = $cfgFile.DirectoryName
+
+                # 1. Extract the original version from the config file
+                $originalVersion = "3.14" # Default fallback
+                $cfgContent = Get-Content $cfgFile.FullName
+                foreach ($line in $cfgContent) {
+                    if ($line -match 'version\s*=\s*(\d+\.\d+)') {
+                        $originalVersion = $Matches[1]
+                        break
+                    }
+                }
+
+                # Clean up the path name for a safe filename (remove drive letters and slashes)
+                $relativeName = ($venvRoot -split [regex]::Escape($pythonInstallDir))[-1].TrimStart('\').Replace('\', '_')
+                if ([string]::IsNullOrWhitespace($relativeName)) { $relativeName = "root_venv" }
+
+                # Save the requirements AND the version info
+                $backupFile = Join-Path $venvTempBackupDir "req-$relativeName.txt"
+                $versionLog = Join-Path $venvTempBackupDir "ver-$relativeName.txt"
     
-        Write-Host "Extracting to: $pythonInstallDir..." -ForegroundColor Cyan
-        Expand-Archive -Path $zipPath -DestinationPath $pythonInstallDir -Force
+                $venvPython = Join-Path $venvRoot "Scripts\python.exe"
+                $venvuv = Join-Path $venvRoot "Scripts\uv.exe"
 
-        # Sometimes the ZIP contains a folder like "python-3.14.3-amd64" inside.
-        # We move everything to the root of $pythonInstallDir.
-        $extractedItems = Get-ChildItem -Path $pythonInstallDir
-        if ($extractedItems.Count -eq 1 -and $extractedItems[0].PSIsContainer) {
-            Write-Host "Flattening directory structure..." -ForegroundColor Gray
-            $subFolder = $extractedItems[0].FullName
-            Get-ChildItem -Path $subFolder | Move-Item -Destination $pythonInstallDir -Recurse -Force -ErrorAction SilentlyContinue
-            Remove-Item $subFolder -Recurse -Force -ErrorAction SilentlyContinue
-        }
+                if (Test-Path $venvPython) {
+                    Write-Host "  Freezing: $relativeName" -ForegroundColor Gray
 
-        $pythonVersion = $remoteVersion
-        if (Test-Path $pythonExePath) {
-            $rawVersion = (& $pythonExePath --version | Select-Object -First 1).Trim()
+                    try {
+                        # Use the internal venv python to ensure we get the correct package list
+                        if (Test-Path $venvuv) {
+                            & $venvPython -m uv pip freeze | Out-File -FilePath $backupFile -Encoding utf8
+                        }
+                        else {
+                            & $venvPython -m pip freeze | Out-File -FilePath $backupFile -Encoding utf8
+                        }    
+                    }
+                    catch {
+                        Write-Warning "Could not export venv package list in $venvRoot. You may need to reinstall venv requirements packages manually."
+                    }
+                    
+                    # Save the path so we know where to recreate it later
+                    $originalVersion | Out-File -FilePath $versionLog -Encoding utf8
+                    $venvRoot | Out-File -FilePath $venvpathsLog -Append
+                }
+            }
+        } else {
+            Write-Host "[SKIP] No virtual environments found in $pythonInstallDir. Nothing to backup." -ForegroundColor Gray
         }
-        $versionInfo = @{
-            url        = $url;
-            tag_name   = $tag_name;
-            commit     = $tagCommit;
-            version    = $remoteVersion;
-            rawversion = $rawVersion;
-            date       = (Get-Date).ToString("yyyy-MM-dd");
-            updated_at = $updated_at;
-            type       = "rel_dist";
-        }
-        $versionInfo | ConvertTo-Json | Out-File -FilePath $versionFile -Encoding utf8 -Force
-        
-        # Cleanup extraction debris
-        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-        
-        if (!(Test-Path $pythonScriptsPath)) { New-Item -Path $pythonScriptsPath -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null }
-
-        Write-Host "Python $remoteVersion installed successfully!" -ForegroundColor DarkGreen
     }
-    catch {
-        Write-Error "Failed to install Python: $($_.Exception.Message)"
-        return
+
+    # Execute Clean Install if mismatch found
+    if ($versionMissMatchUpgrade -and $proceedWithInstall) {
+        Write-Host "Purging $pythonInstallDir for clean installation..." -ForegroundColor Yellow
+        Remove-Item $pythonInstallDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    # Ensure directory exists
+    if (-not (Test-Path $pythonInstallDir)) { New-Item -Path $pythonInstallDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null }
+
+    $versionInfo = @{
+        url        = $url;
+        tag_name   = $tag_name;
+        commit     = $tagCommit;
+        version    = $remoteVersion;
+        rawversion = $rawVersion;
+        date       = (Get-Date).ToString("yyyy-MM-dd");
+        updated_at = $updated_at;
+        type       = "rel_dist";
+    }
+
+    # Allow overwrite files in same Major.Minor version or a full clean install with packages restoring
+    if (($versionMissMatchUpgrade -and $proceedWithInstall) -or ($vLocal.Major -eq $vRemote.Major -or $vLocal.Minor -eq $vRemote.Minor))
+    {
+        # 4. Get from the official site
+        try {
+            $zipPath = Join-Path $env:TEMP $zipName
+            
+            Write-Host "Downloading $zipName..." -ForegroundColor Cyan
+            Invoke-WebRequest -Uri $url -Outfile $zipPath -ErrorAction Stop
+        
+            Write-Host "Extracting Python $remoteVersion..." -ForegroundColor Cyan
+            Expand-Archive -Path $zipPath -DestinationPath $pythonInstallDir -Force
+
+            # Sometimes the ZIP contains a folder like "python-3.14.3-amd64" inside.
+            # We move everything to the root of $pythonInstallDir.
+            $extractedItems = Get-ChildItem -Path $pythonInstallDir
+            if ($extractedItems.Count -eq 1 -and $extractedItems[0].PSIsContainer) {
+                Write-Host "Flattening directory structure..." -ForegroundColor Gray
+                $subFolder = $extractedItems[0].FullName
+                Get-ChildItem -Path $subFolder | Move-Item -Destination $pythonInstallDir -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item $subFolder -Recurse -Force -ErrorAction SilentlyContinue
+            }
+
+            $pythonVersion = $remoteVersion
+            if (Test-Path $pythonExePath) {
+                $rawVersion = (& $pythonExePath --version | Select-Object -First 1).Trim()
+            }
+            $versionInfo = @{
+                url        = $url;
+                tag_name   = $tag_name;
+                commit     = $tagCommit;
+                version    = $remoteVersion;
+                rawversion = $rawVersion;
+                date       = (Get-Date).ToString("yyyy-MM-dd");
+                updated_at = $updated_at;
+                type       = "rel_dist";
+            }
+            
+            # Cleanup extraction debris
+            Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+            
+            if (-not (Test-Path $pythonScriptsPath)) { New-Item -Path $pythonScriptsPath -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null }
+
+            Write-Host "Python $remoteVersion installed successfully!" -ForegroundColor DarkGreen
+        }
+        catch {
+            Write-Error "Critical Failure during installation: $($_.Exception.Message)"
+            return # Exit to prevent trying to run pip on a non-existent install
+        }
     }
     
+    $versionInfo | ConvertTo-Json | Out-File -FilePath $versionFile -Encoding utf8 -Force
+
     # --- 3. Pip Bootstrap ---
     # Standard zips often lack pip. We check the \Scripts folder.
-    $pipExe = Join-Path $pythonScriptsPath "pip.exe"
-    $uvExe = Join-Path $pythonScriptsPath "uv.exe"
-    if (!(Test-Path $pipExe)) {
+    if (-not $pipAvailable) {
         $getPipScript = Join-Path $env:TEMP "get-pip.py"
         try {
             Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile $getPipScript
@@ -283,25 +452,13 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
     # --- Post-Install: Package Management ---
     Write-Host "Python Version: $(& $pythonExePath --version)" -ForegroundColor Gray
 
-    try {
-        if (Test-Path $pipExe) {
-            & $pipExe --version | Out-Null
-            $pipAvailable = $true
-        }
-        else {
-            $pipAvailable = $false
-        }
-    }
-    catch {
-        $pipAvailable = $false
+    if (Test-Path $pipExe) {
+        $pipAvailable = $true
     }
 
     if ($pipAvailable) {
         Write-Host "pip Version: $(& $pythonExePath -m pip --version)" -ForegroundColor Gray
         Write-Host "Upgrading pip and installing uv..." -ForegroundColor Cyan
-        
-        # Using python -m to ensure we use the local instance we just installed
-        & $pythonExePath -m pip install -U pip uv --no-warn-script-location
         
         if ($LASTEXITCODE -eq 0) {
             Write-Host "Successfully installed uv (Fast Python Package Manager)." -ForegroundColor Green
@@ -310,27 +467,157 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
             Write-Warning "uv installation failed. You may need to install it manually."
         }
     }
-    
-    try {
-        if (Test-Path $uvExe) {
-            & $uvExe --version | Out-Null
-            $uvAvailable = $true
-        }
-        else {
-            $uvAvailable = $false
-        }
-    }
-    catch {
-        $uvAvailable = $false
+
+    if (Test-Path $uvExe) {
+        $uvAvailable = $true
     }
 
+    if ($pipAvailable) {
+        # 1. Define your dependencies clearly
+        $packageList = @'
+setuptools
+setuptools-rust
+wheel
+cython
+pybind11
+"pybind11[global]"
+ninja
+make
+cmake
+build
+build[uv]
+meson
+numpy
+psutil
+tqdm
+pydantic
+pydantic-core
+py-cpuinfo
+scipy
+rpyc
+requests
+pylint
+pyyaml
+packaging
+winloop
+'@
+        # 2. Parse the string into a clean array
+        $packages = $packageList -split '\s+' | Where-Object { $_ -match '\S' }
+
+        # Install using the splatted array
+        Write-Host "Installing library development essentials..." -ForegroundColor Cyan
+        & $pythonExePath -m uv pip install -U $packages --no-warn-script-location | Out-Null
+        
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "Successfully installed required packages vis uv (Fast Python Package Manager)." -ForegroundColor Green
+        }
+        else {
+            Write-Warning "required packages installation failed. You may need to install it manually."
+        }
+    }
+
+    # --- 4. Package Migration & Incompatibility Check ---
+    if ($versionMissMatchUpgrade -and $proceedWithInstall -and (Test-Path $requirementsFile)) {
+        Write-Host "Attempting to restore packages for Python $remoteVersion using uv (high-speed migration)..." -ForegroundColor Cyan
+
+        # 1. Define the persistent backup path
+        $persistentRequirements = Join-Path $pythonInstallDir "python-$localVersion-migration-requirements.txt"
+    
+        # 2. Copy the file to the install dir before we start (Safety first)
+        Copy-Item $requirementsFile -Destination $persistentRequirements -Force -ErrorAction SilentlyContinue
+
+        # 3. Bulk install attempt (Fastest)
+        & $pythonExePath -m uv pip install -r $requirementsFile --no-warn-script-location | Out-Null
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Bulk restore failed. Identifying specific incompatible packages..."
+            $incompatibles = @()
+            $packages = Get-Content $requirementsFile
+            foreach ($pkg in $packages) {
+                if ([string]::IsNullOrWhiteSpace($pkg)) { continue }
+                Write-Host "  Installing: $pkg" -ForegroundColor Gray
+                & $pythonExePath -m uv pip install -U $pkg --no-warn-script-location | Out-Null
+                
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Warning "  [FAILED] $pkg is incompatible or failed to build."
+                    $incompatibles += $pkg
+                }
+            }
+
+            if ($incompatibles.Count -gt 0) {
+                $incompatibles | ConvertTo-Json | Out-File $incompatibleFile -Force -ErrorAction SilentlyContinue
+                Write-Host "!!! Incompatible packages logged to: $incompatibleFile" -ForegroundColor Yellow
+            }
+        }
+        
+        # Clean up the TEMP file, but keep the one in $pythonInstallDir as a log
+        Remove-Item $requirementsFile -Force -ErrorAction SilentlyContinue
+        Write-Host "[ARCHIVED] Previous package list saved to: $persistentRequirements" -ForegroundColor Gray
+    }
+
+    # --- Multi-Venv Restore Phase (Dynamic Versioning) ---
+    if ($versionMissMatchUpgrade -and $proceedWithInstall -and (Test-Path $venvpathsLog)) {
+        Write-Host "Attempting to restore venv packages for Python $remoteVersion using uv (high-speed migration)..." -ForegroundColor Cyan
+
+        # 1. Define the persistent backup path
+        $venvBackupDir = Join-Path $pythonInstallDir "venv-backups"
+        if (-not (Test-Path $venvBackupDir)) { New-Item -Path $venvBackupDir -ItemType Directory -Force -ErrorAction SilentlyContinue}
+    
+        # 2. Copy the venv backup folder to the install dir before we start (Safety first)
+        Copy-Item -Path "$venvTempBackupDir\*" -Destination $venvBackupDir -Recurse -Force -ErrorAction SilentlyContinue
+
+        $venvPaths = Get-Content $venvpathsLog
+        Write-Host "[RESTORE] Rebuilding discovered virtual environments..." -ForegroundColor Cyan
+
+        foreach ($vPath in $venvPaths) {
+            if ([string]::IsNullOrWhiteSpace($vPath)) { continue }
+
+            $relativeName = ($vPath -split [regex]::Escape($pythonInstallDir))[-1].TrimStart('\').Replace('\', '_')
+            if ([string]::IsNullOrWhitespace($relativeName)) { $relativeName = "root_venv" }
+
+            $backupFile = Join-Path $venvTempBackupDir "req-$relativeName.txt"
+            $versionLog = Join-Path $venvTempBackupDir "ver-$relativeName.txt"
+
+            if (Test-Path $backupFile -and Test-Path $versionLog) {
+                # Read the specific version intended for THIS venv
+                $targetVenvVersion = (Get-Content $versionLog).Trim()
+
+                Write-Host "  Recreating: $vPath (Targeting Python $targetVenvVersion)" -ForegroundColor Gray
+            
+                # Delete old incompatible folder
+                if (Test-Path $vPath) { Remove-Item $vPath -Recurse -Force -ErrorAction SilentlyContinue }
+            
+                # Create fresh venv using the specific version detected earlier
+                # UV will find the correct installed Python (3.14 or 3.15) automatically
+                & $pythonExePath -m uv venv $vPath --python $targetVenvVersion --quiet
+            
+                # Restore packages using the GLOBAL uv targeting the NEW venv python
+                $newVenvPython = Join-Path $vPath "Scripts\python.exe"
+                & $pythonExePath -m uv pip install -r $backupFile --python $newVenvPython --path $vPath --no-warn-script-location --offline-if-cached
+                #& $newVenvPython -m ensurepip
+                #& $newVenvPython -m pip install -U pip uv
+                #& $newVenvPython -m uv pip install -r $backupFile --no-warn-script-location
+                
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host "  [SUCCESS] Restored $relativeName as Python $targetVenvVersion" -ForegroundColor Green
+                } else {
+                    Write-Error "  [FATAL] Package restoration failed for $relativeName as Python $targetVenvVersion"
+                }
+            }
+        }
+
+        # Clean up the TEMP venv backup folder, but keep the one in $pythonInstallDir as a log
+        Remove-Item $venvTempBackupDir -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "[ARCHIVED] Previous venv package list saved to: $venvBackupDir" -ForegroundColor Gray
+    }
+
+    Write-Host "Python $remoteVersion upgrade successful!" -ForegroundColor DarkGreen
 }
 
 # Finalize Environment Helper
 if (Test-Path $pythonExePath) {
     # Create Environment Helper
     Write-Host "Generating environment helper script..." -ForegroundColor Cyan
-    $pythonEnvScript = Join-Path $EnvironmentDir "env-python.ps1"
 
     # Generate Environment Helper with Clean Paths
     $pythonBinPath = $pythonBinPath.TrimEnd('\')
@@ -348,7 +635,9 @@ $env:PYTHON_PATH = $pythonroot
 $env:PYTHON_ROOT = $pythonroot
 $env:PYTHON_BIN = $pythonbin
 $env:PYTHON_SCRIPTS = $pythonscripts
-"$pythonscripts", "$pythonbin" | ForEach-Object { if ($env:PATH -notlike "*$_*") { $env:PATH = $_ + ";" + $env:PATH } }
+if ($env:PATH -notlike "*$pythonbin*") { $env:PATH = $pythonbin + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") }
+if ($env:PATH -notlike "*$pythonscripts*") { $env:PATH = $env:PATH + ";" + $pythonscripts; $env:PATH = ($env:PATH).Replace(";;", ";") }
+#"$pythonscripts", "$pythonbin" | ForEach-Object { if ($env:PATH -notlike "*$_*") { $env:PATH = $_ + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") } }
 Write-Host "Python Environment Loaded (Version: $pythonversion) (Bin: $pythonbin)" -ForegroundColor Green
 Write-Host "PYTHON_ROOT: $env:PYTHON_ROOT" -ForegroundColor Gray
 '@  -replace "VALUE_BIN_PATH", $pythonBinPath `
@@ -372,16 +661,32 @@ Write-Host "PYTHON_ROOT: $env:PYTHON_ROOT" -ForegroundColor Gray
     foreach ($pythontool in $pythontools) {
         $source = Join-Path $pythonBinPath $pythontool
         $target = Join-Path $GlobalBinDir $pythontool
+        $targetp3 = Join-Path $GlobalBinDir "python3.exe"
 
         if (Test-Path $source) {
             if (Test-Path $target) { Remove-Item $target -Force -ErrorAction SilentlyContinue }
+
             try {
-                New-Item -ItemType SymbolicLink -Path $target -Value $source -ErrorAction Stop | Out-Null
+                New-Item -Path $target -ItemType SymbolicLink -Value $source -ErrorAction Stop | Out-Null
                 Write-Host "[LINKED] $pythontool" -ForegroundColor Gray
             }
             catch {
                 # Fallback to hardlink if developer mode is off/insufficient permissions
-                New-Item -ItemType HardLink -Path $target -Value $source | Out-Null
+                New-Item -Path $target -ItemType HardLink -Value $source | Out-Null
+                Write-Host "[LINKED] $pythontool" -ForegroundColor Gray
+            }
+
+            if ($pythontool -eq "python.exe") {
+                if (Test-Path $targetp3) { Remove-Item $targetp3 -Force -ErrorAction SilentlyContinue; }
+                try {
+                    New-Item -Path $targetp3 -ItemType SymbolicLink -Value $source -ErrorAction Stop | Out-Null
+                    Write-Host "[LINKED] python3.exe" -ForegroundColor Gray
+                }
+                catch {
+                    # Fallback to hardlink if developer mode is off/insufficient permissions
+                    New-Item -Path $targetp3 -ItemType HardLink -Value $source | Out-Null
+                    Write-Host "[LINKED] python3.exe" -ForegroundColor Gray
+                }
             }
         }
         else {
@@ -391,10 +696,8 @@ Write-Host "PYTHON_ROOT: $env:PYTHON_ROOT" -ForegroundColor Gray
     
     Write-Host "[LINKED] Python is now globally available via %BINARIES_PATH%" -ForegroundColor Green
     
-    if ($withMachineEnvironment)
+    if ($PythonWithMachineEnvironment)
     {
-        $pythonMachineEnvScript = Join-Path $EnvironmentDir "machine-env-python.ps1"
-
         # Generating Machine Environment wich add to the persist registry machine Environment
         $MachineEnvContent = @'
 # Python Machine Environment Setup
@@ -519,5 +822,18 @@ Write-Host "PYTHON_ROOT: $env:PYTHON_ROOT" -ForegroundColor Gray
     Write-Host "--- Python Sync Complete ---" -ForegroundColor Green
 } else {
     Write-Error "python.exe was not found in the $pythonBinPath folder."
+    $pythontools | ForEach-Object { 
+        $globalLinkPath = Join-Path $GlobalBinDir $_
+        if (Test-Path $globalLinkPath) {
+            Write-Host "Cleaning up dead symlink at $globalLinkPath..." -ForegroundColor Yellow
+            Remove-Item $globalLinkPath -Force -ErrorAction SilentlyContinue
+        }
+        if ($_ -eq "python.exe") {
+            $target = Join-Path $GlobalBinDir "python3.exe"
+            if (Test-Path $target) {
+                Remove-Item $target -Force -ErrorAction SilentlyContinue;
+            }
+        }
+    }
     return
 }

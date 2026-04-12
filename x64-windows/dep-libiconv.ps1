@@ -3,15 +3,19 @@
 # file:x64-windows/dep-libiconv.ps1
 
 param (
-    [Parameter(HelpMessage="Target vcpkg LIBICONV triplet")]
+    [Parameter(HelpMessage = "Target vcpkg LIBICONV triplet")]
     [string]$Triplet = "x64-windows",
     
-    [Parameter(HelpMessage = "Force a full uninstallation of the local LIBICONV version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Force a full purge of the local LIBICONV version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
     
     [Parameter(HelpMessage = "Add's LIBICONV Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
     [switch]$withMachineEnvironment
 )
+
+# Capture parameters
+$libiconvWithMachineEnvironment = $withMachineEnvironment
+$libiconvForceCleanup = $forceCleanup
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
@@ -29,9 +33,10 @@ if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
 }
 
 # --- 2. Initialize vcpkg environment if missing ---
-if (!$env:VCPKG_PATH) {
+if (-not $env:VCPKG_PATH) {
     $vcpkgEnvScript = Join-Path $EnvironmentDir "env-vcpkg.ps1"
-    if (Test-Path $vcpkgEnvScript) { . $vcpkgEnvScript } else {
+    if (Test-Path $vcpkgEnvScript) { . $vcpkgEnvScript }
+    if (-not $env:VCPKG_PATH) {
         $depvcpkgEnvScript = Join-Path $PSScriptRoot "dep-vcpkg.ps1"
         if (Test-Path $depvcpkgEnvScript) { . $depvcpkgEnvScript }
         else {
@@ -57,6 +62,8 @@ $libiconvToolsPath = Join-Path $libiconvInstallDir "tools\libiconv"
 $libiconvToolsBinPath = Join-Path $libiconvToolsPath "bin"
 $libiconvLibDir = Join-Path $libiconvInstallDir "lib"
 $versionFile = Join-Path $libiconvToolsPath "version.json"
+$libiconvEnvScript = Join-Path $EnvironmentDir "env-libiconv.ps1"
+$libiconvMachineEnvScript = Join-Path $EnvironmentDir "machine-env-libiconv.ps1"
 
 # Version Detection
 $repo = "microsoft/vcpkg"
@@ -111,7 +118,7 @@ function Invoke-libiconvVersionPurge {
     $libiconvBinInstallPath = Join-Path $InstallPath "bin"
     $libiconvToolsBinInstallPath = Join-Path $InstallPath "tools\libiconv\bin"
 
-    if ($withMachineEnvironment) {
+    if ($libiconvWithMachineEnvironment) {
         $libiconvCleanMachineEnvScript = Join-Path $env:TEMP "clean-machine-env-libiconv.ps1"
 
         # Generating Clean Machine Environment wich removes the persist registry machine Environment
@@ -199,7 +206,18 @@ Write-Host "[REMOVED] ($TargetScope) all '*$libiconvtoolsbinpath*' removed from 
         # Cleanup
         Remove-Item $libiconvCleanMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
     }
-    
+
+    # 2. Filesystem Clean (Requires checking for locked files)
+    # delete everithing we create don't fail later
+    if (Test-Path $libiconvEnvScript) {
+        Write-Host "  [DELETING] $libiconvEnvScript" -ForegroundColor Yellow
+        Remove-Item $libiconvEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $libiconvMachineEnvScript) {
+        Write-Host "  [DELETING] $libiconvMachineEnvScript" -ForegroundColor Yellow
+        Remove-Item $libiconvMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
     # --- 1. Remove LIBICONV via vcpkg ---
     # Note: 'libiconv' is the meta-package in vcpkg
     Write-Host "Removing LIBICONV:$Triplet via vcpkg..." -ForegroundColor Cyan
@@ -211,6 +229,14 @@ Write-Host "[REMOVED] ($TargetScope) all '*$libiconvtoolsbinpath*' removed from 
     }
     Pop-Location
     
+    # remove local Env variables for current session
+    Get-ChildItem Env:\LIBICONV_PATH* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LIBICONV_ROOT* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LIBICONV_BIN* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LIBICONV_TOOLS_BIN* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LIBICONV_INCLUDE_DIR* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LIBICONV_LIBRARY_DIR* | Remove-Item -ErrorAction SilentlyContinue
+
     Write-Host "--- LIBICONV Purge Complete ---" -ForegroundColor Green
 }
 
@@ -226,7 +252,7 @@ if (Test-Path $versionFile) {
     $localVersion = (Get-Content $versionFile | ConvertFrom-Json).version
 }
 
-if ($forceCleanup) {
+if ($libiconvForceCleanup) {
     Invoke-libiconvVersionPurge -InstallPath $libiconvInstallDir
     # Reset trackers to force a fresh install
     $localVersion = "0.0.0"
@@ -299,7 +325,6 @@ if (Test-Path (Join-Path $libiconvLibDir "iconv.lib")) {
     
     # --- 3. Create Environment Helper ---
     Write-Host "Generating environment helper script..." -ForegroundColor Cyan
-    $libiconvEnvScript = Join-Path $EnvironmentDir "env-libiconv.ps1"
 
     # Using a literal here-string with -replace to avoid accidental expansion of $env:PATH during creation
     $EnvContent = @'
@@ -315,12 +340,12 @@ $env:LIBICONV_PATH = $libiconvroot
 $env:LIBICONV_ROOT = $libiconvroot
 $env:LIBICONV_BIN = $libiconvbin
 $env:LIBICONV_TOOLS_BIN = $libiconvtoolsbin
-$env:LIBICONV_INCLUDEDIR = $libiconvinclude
-$env:LIBICONV_LIBRARYDIR = $libiconvlibrary
-if ($env:CMAKE_PREFIX_PATH -notlike "*$libiconvcmakepath*") { $env:CMAKE_PREFIX_PATH = $libiconvcmakepath + ";" + $env:CMAKE_PREFIX_PATH }
-if ($env:INCLUDE -notlike "*$libiconvinclude*") { $env:INCLUDE = $libiconvinclude + ";" + $env:INCLUDE }
-if ($env:LIB -notlike "*$libiconvlibrary*") { $env:LIB = $libiconvlibrary + ";" + $env:LIB }
-"$libiconvbin", "$libiconvtoolsbin" | ForEach-Object { if ($env:PATH -notlike "*$_*") { $env:PATH = $_ + ";" + $env:PATH } }
+$env:LIBICONV_INCLUDE_DIR = $libiconvinclude
+$env:LIBICONV_LIBRARY_DIR = $libiconvlibrary
+if ($env:CMAKE_PREFIX_PATH -notlike "*$libiconvcmakepath*") { $env:CMAKE_PREFIX_PATH = $libiconvcmakepath + ";" + $env:CMAKE_PREFIX_PATH; $env:CMAKE_PREFIX_PATH = ($env:CMAKE_PREFIX_PATH).Replace(";;", ";") }
+if ($env:INCLUDE -notlike "*$libiconvinclude*") { $env:INCLUDE = $libiconvinclude + ";" + $env:INCLUDE; $env:INCLUDE = ($env:INCLUDE).Replace(";;", ";") }
+if ($env:LIB -notlike "*$libiconvlibrary*") { $env:LIB = $libiconvlibrary + ";" + $env:LIB; $env:LIB = ($env:LIB).Replace(";;", ";") }
+"$libiconvbin", "$libiconvtoolsbin" | ForEach-Object { if ($env:PATH -notlike "*$_*") { $env:PATH = $_ + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") } }
 Write-Host "LIBICONV Environment Loaded (Version: $libiconvversion) (Bin: $libiconvbin)" -ForegroundColor Green
 Write-Host "LIBICONV_ROOT: $env:LIBICONV_ROOT" -ForegroundColor Gray
 '@  -replace "VALUE_ROOT_PATH", $libiconvInstallDir `
@@ -341,9 +366,8 @@ Write-Host "LIBICONV_ROOT: $env:LIBICONV_ROOT" -ForegroundColor Gray
     }
     Write-Host "libiconv Version: $(vcpkg list libiconv:$Triplet | Select-Object -First 1)" -ForegroundColor Gray
     
-    if ($withMachineEnvironment) {
-        $libiconvMachineEnvScript = Join-Path $EnvironmentDir "machine-env-libiconv.ps1"
-
+    if ($libiconvWithMachineEnvironment)
+    {
         # Generating Machine Environment wich add to the persist registry machine Environment
         $MachineEnvContent = @'
 # LIBICONV Machine Environment Setup

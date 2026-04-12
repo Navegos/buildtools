@@ -3,15 +3,19 @@
 # file:x64-windows/dep-vcpkg.ps1
 
 param (
-    [Parameter(HelpMessage="Path for vcpkg storage", Mandatory=$false)]
+    [Parameter(HelpMessage = "Path for vcpkg storage", Mandatory = $false)]
     [string]$vcpkgInstallDir = "$env:LIBRARIES_PATH\vcpkg",
     
-    [Parameter(HelpMessage = "Force a full uninstallation of the local vcpkg version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Force a full purge of the local vcpkg version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
     
     [Parameter(HelpMessage = "Add's vcpkg Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
     [switch]$withMachineEnvironment
 )
+
+# Capture parameters
+$vcpkgWithMachineEnvironment = $withMachineEnvironment
+$vcpkgForceCleanup = $forceCleanup
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
@@ -29,6 +33,8 @@ if (Test-Path $TargetLink) { Remove-Item $TargetLink -Force -ErrorAction Silentl
 $vcpkgBinPath = $vcpkgInstallDir
 $vcpkgExePath = Join-Path $vcpkgBinPath "vcpkg.exe"
 $versionFile = Join-Path $vcpkgInstallDir "version.json"
+$vcpkgEnvScript = Join-Path $EnvironmentDir "env-vcpkg.ps1"
+$vcpkgMachineEnvScript = Join-Path $EnvironmentDir "machine-env-vcpkg.ps1"
 
 # Version Detection
 $repo = "microsoft/vcpkg"
@@ -58,7 +64,7 @@ function Invoke-vcpkgVersionPurge {
     param ([string]$InstallPath)
     Write-Host "--- Initiating vcpkg Purge ---" -ForegroundColor Cyan
 
-    if ($withMachineEnvironment)
+    if ($vcpkgWithMachineEnvironment)
     {
         $vcpkgCleanMachineEnvScript = Join-Path $env:TEMP "clean-machine-env-vcpkg.ps1"
 
@@ -143,11 +149,25 @@ Write-Host "[REMOVED] ($TargetScope) all '*$vcpkgroot*' removed from TOOLS_PATH"
         Remove-Item $vcpkgCleanMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    # 2. Filesystem Nuke (Requires checking for locked files)
+    # 2. Filesystem Clean (Requires checking for locked files)
+    # delete everithing we create don't fail later
+    if (Test-Path $vcpkgEnvScript) {
+        Write-Host "  [DELETING] $vcpkgEnvScript" -ForegroundColor Yellow
+        Remove-Item $vcpkgEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $vcpkgMachineEnvScript) {
+        Write-Host "  [DELETING] $vcpkgMachineEnvScript" -ForegroundColor Yellow
+        Remove-Item $vcpkgMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    }
     if (Test-Path $InstallPath) {
         Write-Host "  [DELETING] $InstallPath" -ForegroundColor Yellow
         Remove-Item $InstallPath -Recurse -Force -ErrorAction SilentlyContinue
     }
+    
+    # remove local Env variables for current session
+    Get-ChildItem Env:\VCPKG_PATH* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\VCPKG_ROOT* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\VCPKG_BIN* | Remove-Item -ErrorAction SilentlyContinue
 
     Write-Host "--- vcpkg Purge Complete ---" -ForegroundColor Green
 }
@@ -163,7 +183,7 @@ if (Test-Path $versionFile) {
     $localVersion = (Get-Content $versionFile | ConvertFrom-Json).version
 }
 
-if ($forceCleanup) {
+if ($vcpkgForceCleanup) {
     Invoke-vcpkgVersionPurge -InstallPath $vcpkgInstallDir
     # Reset trackers to force a fresh install
     $localVersion = "0.0.0"
@@ -198,7 +218,7 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
 } else {
     Write-Host "vcpkg not found. Starting installation..." -ForegroundColor Yellow
 
-    if (!(Test-Path $vcpkgInstallDir)) { New-Item -Path $vcpkgInstallDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null }
+    if (-not (Test-Path $vcpkgInstallDir)) { New-Item -Path $vcpkgInstallDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null }
 
     # 2. Get latest release from GitHub
     try {
@@ -261,7 +281,6 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
 if (Test-Path $vcpkgExePath) {
     # Create Environment Helper
     Write-Host "Generating environment helper script..." -ForegroundColor Cyan
-    $vcpkgEnvScript = Join-Path $EnvironmentDir "env-vcpkg.ps1"
     
     # Generate Environment Helper with Clean Paths
     $vcpkgBinPath = $vcpkgBinPath.TrimEnd('\')
@@ -276,7 +295,7 @@ $vcpkgversion = "VALUE_VERSION"
 $env:VCPKG_PATH = $vcpkgroot
 $env:VCPKG_ROOT = $vcpkgroot
 $env:VCPKG_BIN = $vcpkgbin
-if ($env:PATH -notlike "*$vcpkgbin*") { $env:PATH = $vcpkgbin + ";" + $env:PATH }
+if ($env:PATH -notlike "*$vcpkgbin*") { $env:PATH = $vcpkgbin + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") }
 Write-Host "vcpkg Environment Loaded (Version: $vcpkgversion) (Bin: $vcpkgbin)" -ForegroundColor Green
 Write-Host "VCPKG_ROOT: $env:VCPKG_ROOT" -ForegroundColor Gray
 '@  -replace "VALUE_BIN_PATH", $vcpkgBinPath `
@@ -300,21 +319,19 @@ Write-Host "VCPKG_ROOT: $env:VCPKG_ROOT" -ForegroundColor Gray
 
     # Create the Symbolic Link
     try {
-        New-Item -ItemType SymbolicLink -Path $TargetLink -Value $vcpkgExePath -ErrorAction Stop | Out-Null
+        New-Item -Path $TargetLink -ItemType SymbolicLink -Value $vcpkgExePath -ErrorAction Stop | Out-Null
         Write-Host "[LINKED] vcpkg (Global) -> $vcpkgExePath" -ForegroundColor Gray
     }
     catch {
-        New-Item -ItemType HardLink -Path $TargetLink -Value $vcpkgExePath | Out-Null
+        New-Item -Path $TargetLink -ItemType HardLink -Value $vcpkgExePath | Out-Null
     }
 
     Write-Host "[LINKED] vcpkg is now globally available via %BINARIES_PATH%" -ForegroundColor Green
     
     Write-Host "vcpkg Version: $(& $vcpkgExePath version | Select-Object -First 1)" -ForegroundColor Gray
     
-    if ($withMachineEnvironment)
+    if ($vcpkgWithMachineEnvironment)
     {
-        $vcpkgMachineEnvScript = Join-Path $EnvironmentDir "machine-env-vcpkg.ps1"
-
         # Generating Machine Environment wich add to the persist registry machine Environment
         $MachineEnvContent = @'
 # vcpkg Machine Environment Setup

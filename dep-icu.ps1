@@ -4,9 +4,9 @@
 
 param (
     [Parameter(HelpMessage = "Target vcpkg ICU triplet")]
-    [string]$Triplet = "x64-windows",
+    [string]$Triplet = $null,
     
-    [Parameter(HelpMessage = "Force a full uninstallation of the local ICU version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Force a full purge of the local ICU version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
     
     [Parameter(HelpMessage = "Add's ICU Machine Environment Variables. Requires Machine Administatror Rights.", Mandatory = $false)]
@@ -26,15 +26,20 @@ if (-not $archFolder) {
 }
 
 # 2. Platform Detection
-if ($IsWindows) { $platform = "windows" }
-elseif ($IsLinux) { $platform = "linux" }
+if ($IsWindows) {
+    $platform = "windows"
+    if ([string]::IsNullOrWhitespace($Triplet)) { $Triplet = "x64-windows" }
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\dep-icu.ps1"
+}
+elseif ($IsLinux) {
+    $platform = "linux"
+    if ([string]::IsNullOrWhitespace($Triplet)) { $Triplet = "x64-linux"}
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)/dep-icu.ps1"
+}
 else {
     Write-Error "Unsupported Operating System."
     return
 }
-
-# 3. Delegation Logic
-$targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\dep-icu.ps1"
 
 if (Test-Path $targetScript) {
     Write-Host "[OS/ARCH] $platform $currentArch detected. Delegating..." -ForegroundColor Cyan

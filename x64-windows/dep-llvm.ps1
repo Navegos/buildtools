@@ -3,15 +3,19 @@
 # file:x64-windows/dep-llvm.ps1
 
 param (
-    [Parameter(HelpMessage="Path for llvm storage", Mandatory=$false)]
+    [Parameter(HelpMessage = "Path for llvm storage", Mandatory = $false)]
     [string]$llvmInstallDir = "$env:LIBRARIES_PATH\llvm",
     
-    [Parameter(HelpMessage = "Force a full uninstallation of the local LLVM version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Force a full purge of the local LLVM version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
     
     [Parameter(HelpMessage = "Add's LLVM Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
     [switch]$withMachineEnvironment
 )
+
+# Capture parameters
+$LLVMWithMachineEnvironment = $withMachineEnvironment
+$LLVMForceCleanup = $forceCleanup
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
@@ -50,6 +54,8 @@ foreach ($llvmtool in $llvmtools) {
 $llvmBinPath = Join-Path $llvmInstallDir "bin"
 $clangExePath = Join-Path $llvmBinPath "clang.exe"
 $versionFile = Join-Path $llvmInstallDir "version.json"
+$llvmEnvScript = Join-Path $EnvironmentDir "env-llvm.ps1"
+$llvmMachineEnvScript = Join-Path $EnvironmentDir "machine-env-llvm.ps1"
 
 # Version Detection
 $repo = "llvm/llvm-project"
@@ -80,7 +86,7 @@ function Invoke-LlvmVersionPurge {
     param ([string]$InstallPath)
     Write-Host "--- Initiating LLVM Purge ---" -ForegroundColor Cyan
 
-    if ($withMachineEnvironment) {
+    if ($LLVMWithMachineEnvironment) {
         $llvmCleanMachineEnvScript = Join-Path $env:TEMP "clean-machine-env-llvm.ps1"
 
         # Generating Clean Machine Environment wich removes the persist registry machine Environment
@@ -164,11 +170,25 @@ Write-Host "[REMOVED] ($TargetScope) all '*$llvmroot*' removed from TOOLS_PATH" 
         Remove-Item $llvmCleanMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    # 2. Filesystem Nuke (Requires checking for locked files)
+    # 2. Filesystem Clean (Requires checking for locked files)
+    # delete everithing we create don't fail later
+    if (Test-Path $llvmEnvScript) {
+        Write-Host "  [DELETING] $llvmEnvScript" -ForegroundColor Yellow
+        Remove-Item $llvmEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $llvmMachineEnvScript) {
+        Write-Host "  [DELETING] $llvmMachineEnvScript" -ForegroundColor Yellow
+        Remove-Item $llvmMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    }
     if (Test-Path $InstallPath) {
         Write-Host "  [DELETING] $InstallPath" -ForegroundColor Yellow
         Remove-Item $InstallPath -Recurse -Force -ErrorAction SilentlyContinue
     }
+    
+    # remove local Env variables for current session
+    Get-ChildItem Env:\LLVM_PATH* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LLVM_ROOT* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LLVM_BIN* | Remove-Item -ErrorAction SilentlyContinue
 
     Write-Host "--- LLVM Purge Complete ---" -ForegroundColor Green
 }
@@ -185,7 +205,7 @@ if (Test-Path $versionFile) {
     $localVersion = (Get-Content $versionFile | ConvertFrom-Json).version
 }
 
-if ($forceCleanup) {
+if ($LLVMForceCleanup) {
     Invoke-LlvmVersionPurge -InstallPath $llvmInstallDir
     # Reset trackers to force a fresh install
     $localVersion = "0.0.0"
@@ -235,7 +255,7 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
         # Specifically target the windows-msvc .tar.xz asset
         $asset = $latestRelease.assets | Where-Object { $_.name -match "clang\+llvm-.*-x86_64-pc-windows-msvc\.tar\.xz$" } | Select-Object -First 1
         
-        if (!$asset) {
+        if (-not $asset) {
             Write-Error "Could not find a .tar.xz asset for Windows x64. Check GitHub release names."
             return
         }
@@ -248,7 +268,7 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
         # 5. Extract and Flatten
         Write-Host "Extracting to temporary location..." -ForegroundColor Cyan
         $tempExtractPath = Join-Path $env:TEMP "llvm_extract_$(Get-Random)"
-        New-Item -ItemType Directory -Path $tempExtractPath -Force -ErrorAction SilentlyContinue | Out-Null
+        New-Item -Path $tempExtractPath -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
 
         # Using Windows native tar.exe to handle .tar.xz
         Write-Host "Decompressing LLVM (this may take a minute)..." -ForegroundColor Gray
@@ -296,7 +316,6 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
 if (Test-Path $clangExePath) {
     #  Create Environment Helper
     Write-Host "Generating environment helper script..." -ForegroundColor Cyan
-    $llvmEnvScript = Join-Path $EnvironmentDir "env-llvm.ps1"
 
     # Generate Environment Helper with Clean Paths
     $llvmBinPath = $llvmBinPath.TrimEnd('\')
@@ -311,7 +330,7 @@ $llvmversion = "VALUE_VERSION"
 $env:LLVM_PATH = $llvmroot
 $env:LLVM_ROOT = $llvmroot
 $env:LLVM_BIN = $llvmbin
-if ($env:PATH -notlike "*$llvmbin*") { $env:PATH = $llvmbin + ";" + $env:PATH }
+if ($env:PATH -notlike "*$llvmbin*") { $env:PATH = $llvmbin + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") }
 Write-Host "LLVM Environment Loaded (Version: $llvmversion) (Bin: $llvmbin)" -ForegroundColor Green
 Write-Host "LLVM_ROOT: $env:LLVM_ROOT" -ForegroundColor Gray
 '@  -replace "VALUE_BIN_PATH", $llvmBinPath `
@@ -338,12 +357,12 @@ Write-Host "LLVM_ROOT: $env:LLVM_ROOT" -ForegroundColor Gray
         if (Test-Path $source) {
             if (Test-Path $target) { Remove-Item $target -Force -ErrorAction SilentlyContinue }
             try {
-                New-Item -ItemType SymbolicLink -Path $target -Value $source -ErrorAction Stop | Out-Null
+                New-Item -Path $target -ItemType SymbolicLink -Value $source -ErrorAction Stop | Out-Null
                 Write-Host "[LINKED] $llvmtool" -ForegroundColor Gray
             }
             catch {
                 # Fallback to hardlink if developer mode is off/insufficient permissions
-                New-Item -ItemType HardLink -Path $target -Value $source | Out-Null
+                New-Item -Path $target -ItemType HardLink -Value $source | Out-Null
             }
         }
         else {
@@ -355,9 +374,8 @@ Write-Host "LLVM_ROOT: $env:LLVM_ROOT" -ForegroundColor Gray
     
     Write-Host "Clang Version: $(& $clangExePath --version | Select-Object -First 1)" -ForegroundColor Gray
     
-    if ($withMachineEnvironment) {
-        $llvmMachineEnvScript = Join-Path $EnvironmentDir "machine-env-llvm.ps1"
-        
+    if ($LLVMWithMachineEnvironment)
+    {
         # Generating Machine Environment wich add to the persist registry machine Environment
         $MachineEnvContent = @'
 # LLVM Machine Environment Setup

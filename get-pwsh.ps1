@@ -4,7 +4,7 @@
 
 param (
     [Parameter(HelpMessage = "Path for PowerShell Installation", Mandatory = $false)]
-    [string]$powershellInstallDir = $(Join-Path $env:ProgramFiles "PowerShell")
+    [string]$powershellInstallDir = $null
 )
 
 # 1. Architecture Detection
@@ -20,15 +20,20 @@ if (-not $archFolder) {
 }
 
 # 2. Platform Detection
-if ($IsWindows) { $platform = "windows" }
-elseif ($IsLinux) { $platform = "linux" }
+if ($IsWindows) {
+    $platform = "windows"
+    if ([string]::IsNullOrWhitespace($powershellInstallDir)) { $powershellInstallDir = $(Join-Path $env:ProgramFiles "PowerShell") }
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\get-pwsh.ps1"
+}
+elseif ($IsLinux) {
+    $platform = "linux"
+    if ([string]::IsNullOrWhitespace($powershellInstallDir)) { $powershellInstallDir = "/opt/microsoft/powershell" }
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)/get-pwsh.ps1"
+}
 else {
     Write-Error "Unsupported Operating System."
     return
 }
-
-# 3. Delegation Logic
-$targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\get-pwsh.ps1"
 
 if (Test-Path $targetScript) {
     Write-Host "[OS/ARCH] $platform $currentArch detected. Delegating..." -ForegroundColor Cyan

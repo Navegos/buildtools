@@ -4,13 +4,13 @@
 
 param (
     [Parameter(HelpMessage = "Base path for library storage", Mandatory = $false)]
-    [string]$LibrariesDir = "C:\libs",
+    [string]$LibrariesDir = $null,
 
     [Parameter(HelpMessage = "Base path for environment-specific configs", Mandatory = $false)]
-    [string]$EnvironmentDir = "C:\libs\environment",
+    [string]$EnvironmentDir = $null,
 
     [Parameter(HelpMessage = "Base path for binaries", Mandatory = $false)]
-    [string]$BinariesDir = "C:\libs\binaries",
+    [string]$BinariesDir = $null,
     
     [Parameter(HelpMessage = "Base path for build tools", Mandatory = $false)]
     [string]$BuildToolsDir = $PSScriptRoot # BuildTools root folder
@@ -29,15 +29,24 @@ if (-not $archFolder) {
 }
 
 # 2. Platform Detection
-if ($IsWindows) { $platform = "windows" }
-elseif ($IsLinux) { $platform = "linux" }
+if ($IsWindows) {
+    $platform = "windows"
+    if ([string]::IsNullOrWhitespace($LibrariesDir)) { $LibrariesDir = "C:\libs" }
+    if ([string]::IsNullOrWhitespace($EnvironmentDir)) { $EnvironmentDir = "C:\libs\environment" }
+    if ([string]::IsNullOrWhitespace($BinariesDir)) { $BinariesDir = "C:\libs\binaries" }
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\add-user-paths.ps1"
+}
+elseif ($IsLinux) {
+    $platform = "linux"
+    if ([string]::IsNullOrWhitespace($LibrariesDir)) { $LibrariesDir = "/opt/libs" }
+    if ([string]::IsNullOrWhitespace($EnvironmentDir)) { $EnvironmentDir = "/opt/libs/environment" }
+    if ([string]::IsNullOrWhitespace($BinariesDir)) { $BinariesDir = "/opt/libs/binaries" }
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)/add-user-paths.ps1"
+}
 else {
     Write-Error "Unsupported Operating System."
     return
 }
-
-# 3. Delegation Logic
-$targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\add-user-paths.ps1"
 
 if (Test-Path $targetScript) {
     Write-Host "[OS/ARCH] $platform $currentArch detected. Delegating..." -ForegroundColor Cyan

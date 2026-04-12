@@ -4,10 +4,16 @@
 
 param (
     [Parameter(HelpMessage = "Path for Python storage", Mandatory = $false)]
-    [string]$pythonInstallDir = "$env:LIBRARIES_PATH\python",
+    [string]$pythonInstallDir = $null,
+    
+    [Parameter(HelpMessage = "Python Version", Mandatory = $false)]
+    [string]$pythonVersion = "3.14.4",
 
-    [Parameter(HelpMessage = "Force a full uninstallation of the local Python version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Force a full purge of the local Python version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
+
+    [Parameter(HelpMessage = "Don't Update Python and scripts packages if update has found", Mandatory = $false)]
+    [switch]$dontUpdate,
     
     [Parameter(HelpMessage = "Add's Python Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
     [switch]$withMachineEnvironment
@@ -26,15 +32,20 @@ if (-not $archFolder) {
 }
 
 # 2. Platform Detection
-if ($IsWindows) { $platform = "windows" }
-elseif ($IsLinux) { $platform = "linux" }
+if ($IsWindows) {
+    $platform = "windows"
+    if ([string]::IsNullOrWhitespace($pythonInstallDir)) { $pythonInstallDir = "$env:LIBRARIES_PATH\python" }
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\dep-python.ps1"
+}
+elseif ($IsLinux) {
+    $platform = "linux"
+    if ([string]::IsNullOrWhitespace($pythonInstallDir)) { $pythonInstallDir = "$env:LIBRARIES_PATH/python" }
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)/dep-python.ps1"
+}
 else {
     Write-Error "Unsupported Operating System."
     return
 }
-
-# 3. Delegation Logic
-$targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\dep-python.ps1"
 
 if (Test-Path $targetScript) {
     Write-Host "[OS/ARCH] $platform $currentArch detected. Delegating..." -ForegroundColor Cyan

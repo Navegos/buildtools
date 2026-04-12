@@ -4,9 +4,9 @@
 
 param (
     [Parameter(HelpMessage = "Path for git Installation", Mandatory = $false)]
-    [string]$gitInstallDir = $(Join-Path $env:ProgramFiles "Git"),
+    [string]$gitInstallDir = $null,
     
-    [Parameter(HelpMessage = "Force a full uninstallation of the local GIT version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Force a full purge of the local GIT version before continuing", Mandatory = $false)]
     [switch]$forceCleanup
 )
 
@@ -23,15 +23,20 @@ if (-not $archFolder) {
 }
 
 # 2. Platform Detection
-if ($IsWindows) { $platform = "windows" }
-elseif ($IsLinux) { $platform = "linux" }
+if ($IsWindows) {
+    $platform = "windows"
+    if ([string]::IsNullOrWhitespace($gitInstallDir)) { $gitInstallDir = $(Join-Path $env:ProgramFiles "Git") }
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\dep-git.ps1"
+}
+elseif ($IsLinux) {
+    $platform = "linux"
+    if ([string]::IsNullOrWhitespace($gitInstallDir)) { $gitInstallDir = "/usr" }
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)/dep-git.ps1"
+}
 else {
     Write-Error "Unsupported Operating System."
     return
 }
-
-# 3. Delegation Logic
-$targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\dep-git.ps1"
 
 if (Test-Path $targetScript) {
     Write-Host "[OS/ARCH] $platform $currentArch detected. Delegating..." -ForegroundColor Cyan

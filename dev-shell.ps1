@@ -2,6 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # file:dev-shell.ps1
 
+param (
+    [Parameter(HelpMessage = "Add's developemnt Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
+    [switch]$withMachineEnvironment, 
+
+    [Parameter(HelpMessage = "Upgrades developemnt compilers. Requires Machine Administrator Rights.", Mandatory = $false)]
+    [switch]$doUpgrade
+)
+
 # 1. Architecture Detection
 $currentArch = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLower()
 
@@ -15,15 +23,18 @@ if (-not $archFolder) {
 }
 
 # 2. Platform Detection
-if ($IsWindows) { $platform = "windows" }
-elseif ($IsLinux) { $platform = "linux" }
+if ($IsWindows) {
+    $platform = "windows"
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\dev-shell.ps1"
+}
+elseif ($IsLinux) {
+    $platform = "linux"
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)/dev-shell.ps1"
+}
 else {
     Write-Error "Unsupported Operating System."
     return
 }
-
-# 3. Delegation Logic
-$targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\dev-shell.ps1"
 
 if (Test-Path $targetScript) {
     Write-Host "[OS/ARCH] $platform $currentArch detected. Delegating..." -ForegroundColor Cyan

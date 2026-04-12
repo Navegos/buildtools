@@ -3,10 +3,10 @@
 # file:dep-cmake.ps1
 
 param (
-    [Parameter(HelpMessage="Path for cmake storage", Mandatory=$false)]
-    [string]$cmakeInstallDir = "$env:LIBRARIES_PATH\cmake",
+    [Parameter(HelpMessage = "Path for cmake storage", Mandatory = $false)]
+    [string]$cmakeInstallDir = $null,
     
-    [Parameter(HelpMessage = "Force a full uninstallation of the local CMake version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Force a full purge of the local CMake version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
     
     [Parameter(HelpMessage = "Add's CMake Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
@@ -26,15 +26,20 @@ if (-not $archFolder) {
 }
 
 # 2. Platform Detection
-if ($IsWindows) { $platform = "windows" }
-elseif ($IsLinux) { $platform = "linux" }
+if ($IsWindows) {
+    $platform = "windows"
+    if ([string]::IsNullOrWhitespace($cmakeInstallDir)) { $cmakeInstallDir = "$env:LIBRARIES_PATH\cmake" }
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\dep-cmake.ps1"
+}
+elseif ($IsLinux) {
+    $platform = "linux"
+    if ([string]::IsNullOrWhitespace($cmakeInstallDir)) { $cmakeInstallDir = "$env:LIBRARIES_PATH/cmake" }
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)/dep-cmake.ps1"
+}
 else {
     Write-Error "Unsupported Operating System."
     return
 }
-
-# 3. Delegation Logic
-$targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\dep-cmake.ps1"
 
 if (Test-Path $targetScript) {
     Write-Host "[OS/ARCH] $platform $currentArch detected. Delegating..." -ForegroundColor Cyan

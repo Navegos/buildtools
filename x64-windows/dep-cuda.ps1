@@ -22,9 +22,9 @@ param (
     [string]$cudnnVersion = "9.20.0",
     
     [Parameter(HelpMessage = "Full link for TensorRT package", Mandatory = $false)]
-    [string]$tensorrtLink = "https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/10.16.0/zip/TensorRT-10.16.0.72.Windows.amd64.cuda-13.2.zip",
+    [string]$tensorrtLink = "https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/10.16.1/zip/TensorRT-10.16.1.11.Windows.amd64.cuda-13.2.zip",
     
-    [Parameter(HelpMessage = "Force a full uninstallation of the local CUDA version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Force a full purge of the local CUDA version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
 
     [Parameter(HelpMessage = "Don't Update CUDA Toolkit and libs if update has found", Mandatory = $false)]
@@ -33,6 +33,11 @@ param (
     [Parameter(HelpMessage = "Add's CUDA Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
     [switch]$withMachineEnvironment
 )
+
+# Capture parameters
+$CudaWithMachineEnvironment = $withMachineEnvironment
+$CudaForceCleanup = $forceCleanup
+$CudaDontUpdate = $dontUpdate
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
@@ -145,6 +150,8 @@ $cudapathmajorMinor = "v" + $cudamajorMinor             # e.g., "v13.2"
 $cudaenvmajorMinor = $cudaSplit[0..1] -join "_"         # e.g., "13_2"
 $activeInstallDir = Join-Path $baseRoot $cudapathmajorMinor
 $versionFile = Join-Path $activeInstallDir "version.json"
+$cudaEnvScript = Join-Path $EnvironmentDir "env-cuda.ps1"
+$cudaMachineEnvScript = Join-Path $EnvironmentDir "machine-env-cuda.ps1"
 
 if (Test-Path $versionFile) {
     $localVersion = (Get-Content $versionFile | ConvertFrom-Json).cuda.version
@@ -180,7 +187,7 @@ function Invoke-CudaVersionPurge {
 
     Write-Host "--- Initiating Purge for CUDA $verPath ---" -ForegroundColor Cyan
 
-    if ($withMachineEnvironment)
+    if ($CudaWithMachineEnvironment)
     {
         $cudaCleanMachineEnvScript = Join-Path $env:TEMP "clean-machine-env-cuda.ps1"
 
@@ -318,20 +325,39 @@ Write-Host "[REMOVED] ($TargetScope) all '*$verPath*' removed from NVIDIA_PATH" 
         # Cleanup
         Remove-Item $cudaCleanMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
     }
-
-    # 4. Filesystem Nuke
+    
+    # 2. Filesystem Clean (Requires checking for locked files)
+    # delete everithing we create don't fail later
+    if (Test-Path $cudaEnvScript) {
+        Write-Host "  [DELETING] $cudaEnvScript" -ForegroundColor Yellow
+        Remove-Item $cudaEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $cudaMachineEnvScript) {
+        Write-Host "  [DELETING] $cudaMachineEnvScript" -ForegroundColor Yellow
+        Remove-Item $cudaMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    }
     if (Test-Path $fullInstallDir) {
         Write-Host "  [DELETING] $fullInstallDir" -ForegroundColor Yellow
         Remove-Item $fullInstallDir -Recurse -Force -ErrorAction SilentlyContinue
     }
     
+    # remove local Env variables for current session
+    Get-ChildItem Env:\CUDA_HOME* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CUDA_PATH* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CUDA_PATH_V* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CUDA_TOOLKIT_ROOT_DIR* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CUDA_ROOT* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CUDA_BIN* | Remove-Item -ErrorAction SilentlyContinue 
+    Get-ChildItem Env:\CUDA_INCLUDE_DIR* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CUDA_LIBRARY_DIR* | Remove-Item -ErrorAction SilentlyContinue
+
     Write-Host "--- Purge Complete for $verPath ---" -ForegroundColor Green
 }
 
-# Check if forceCleanup was requested OR if an update is required
-if ($forceCleanup -or ($vLocal -lt $vRemote -and -not $dontUpdate)) {
+# Check if CudaForceCleanup was requested OR if an update is required
+if ($CudaForceCleanup -or ($vLocal -lt $vRemote -and -not $CudaDontUpdate)) {
     
-    if ($forceCleanup) {
+    if ($CudaForceCleanup) {
         Write-Host "[FORCE] Manual cleanup requested for version $localVersion..." -ForegroundColor Magenta
     }
     else {
@@ -341,7 +367,7 @@ if ($forceCleanup -or ($vLocal -lt $vRemote -and -not $dontUpdate)) {
     # Trigger the Purge Function
     # Note: We use $cudamajorMinor from the local detection to ensure we delete the right files
     $purgeVer = $localVersion.Split('.')[0..1] -join "."
-    if ($forceCleanup) {
+    if ($CudaForceCleanup) {
         $cuVer = $cudaversion.Split('.')[0..1] -join "."
         Invoke-CudaVersionPurge -Version $cuVer
     }
@@ -363,7 +389,7 @@ if ($forceCleanup -or ($vLocal -lt $vRemote -and -not $dontUpdate)) {
 }
 
 # We are installing new version if forcing cleanup
-if ($dontUpdate -and -not $forceCleanup) {
+if ($CudaDontUpdate -and -not $CudaForceCleanup) {
     $cudaVersion = $localVersion
     $cudaSplit = $cudaVersion.Split('.')
     $cudamajor = $cudaSplit[0]                              # e.g., "13"
@@ -419,13 +445,13 @@ foreach ($cudatool in $cudatools) {
 }
 
 # --- 4. Install or Skip ---
-if (($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") -or ($dontUpdate -and -not $forceCleanup)) {
+if (($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") -or ($CudaDontUpdate -and -not $CudaForceCleanup)) {
     Write-Host "[SKIP] CUDA $localVersion is already installed, up to date, or you skipped update at: $cudaInstallDir" -ForegroundColor Green
 } else {
     Write-Host "[UPDATE] Local: $localVersion -> Remote: $remoteVersion" -ForegroundColor Yellow
 
     # Initialize Directory
-    if (!(Test-Path $cudaInstallDir)) { New-Item -Path $cudaInstallDir -ItemType Directory -Force | Out-Null }
+    if (-not (Test-Path $cudaInstallDir)) { New-Item -Path $cudaInstallDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null }
 
     $manifestUrl = "$baseRedistUrl/redistrib_$remoteVersion.json"
     $manifest = Invoke-RestMethod -Uri $manifestUrl
@@ -530,9 +556,9 @@ if (($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") -or ($dontUpdate -and 
             Get-ChildItem -Path $internalFolder.FullName | ForEach-Object {
                 $destPath = Join-Path $cudaInstallDir $_.Name
                 if ($_.PSIsContainer -and (Test-Path $destPath)) {
-                    Copy-Item -Path "$($_.FullName)\*" -Destination $destPath -Recurse -Force
+                    Copy-Item -Path "$($_.FullName)\*" -Destination $destPath -Recurse -Force -ErrorAction SilentlyContinue
                 } else {
-                    Copy-Item -Path $_.FullName -Destination $cudaInstallDir -Recurse -Force
+                    Copy-Item -Path $_.FullName -Destination $cudaInstallDir -Recurse -Force -ErrorAction SilentlyContinue
                 }
             }
         }
@@ -545,7 +571,7 @@ if (($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") -or ($dontUpdate -and 
         $dlls = Get-ChildItem -Path $cudaLibDir -Filter "*.dll" -Recurse
         foreach ($dll in $dlls) {
             $dest = Join-Path $cudaBinPath $dll.Name
-            if (!(Test-Path $dest)) {
+            if (-not (Test-Path $dest)) {
                 Move-Item -Path $dll.FullName -Destination $cudaBinPath -Force
             }
         }
@@ -558,7 +584,7 @@ if (($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") -or ($dontUpdate -and 
     if (Test-Path $nvvmcicc_source) {
         if (Test-Path $nvvmcicc_target) { Remove-Item $nvvmcicc_target -Force -ErrorAction SilentlyContinue }
         try {
-            New-Item -ItemType SymbolicLink -Path $nvvmcicc_target -Value $nvvmcicc_source -ErrorAction Stop | Out-Null
+            New-Item -Path $nvvmcicc_target -ItemType SymbolicLink -Value $nvvmcicc_source -ErrorAction Stop | Out-Null
             Write-Host "[LINKED] $nvvmcicctool in $cudaBinPath" -ForegroundColor Gray
         }
         catch {
@@ -576,12 +602,12 @@ if (($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") -or ($dontUpdate -and 
     if (Test-Path $computesanitizer_source) {
         if (Test-Path $computesanitizer_target) { Remove-Item $computesanitizer_target -Force -ErrorAction SilentlyContinue }
         try {
-            New-Item -ItemType SymbolicLink -Path $computesanitizer_target -Value $computesanitizer_source -ErrorAction Stop | Out-Null
+            New-Item -Path $computesanitizer_target -ItemType SymbolicLink -Value $computesanitizer_source -ErrorAction Stop | Out-Null
             Write-Host "[LINKED] $computesanitizertool in $cudaBinPath" -ForegroundColor Gray
         }
         catch {
             # Fallback to hardlink if developer mode is off/insufficient permissions
-            New-Item -ItemType HardLink -Path $computesanitizer_target -Value $computesanitizer_source | Out-Null
+            New-Item -Path $computesanitizer_target -ItemType HardLink -Value $computesanitizer_source | Out-Null
         }
     }
     else {
@@ -601,7 +627,7 @@ if (($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") -or ($dontUpdate -and 
         Invoke-WebRequest -Uri $tensorrtLink -OutFile $trtZipFile -UseBasicParsing
     
         Write-Host "Extracting TensorRT..." -ForegroundColor Gray
-        if (!(Test-Path $trtTempExtract)) { New-Item -Path $trtTempExtract -ItemType Directory }
+        if (-not (Test-Path $trtTempExtract)) { New-Item -Path $trtTempExtract -ItemType Directory }
         Expand-Archive -Path $trtZipFile -DestinationPath $trtTempExtract -Force
     
         # Flatten TensorRT structure into the CUDA Install Dir
@@ -613,11 +639,11 @@ if (($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") -or ($dontUpdate -and 
                 $destPath = Join-Path $cudaInstallDir $_.Name
                 if ($_.PSIsContainer -and (Test-Path $destPath)) {
                     # Merge folders (bin, lib, include)
-                    Copy-Item -Path "$($_.FullName)\*" -Destination $destPath -Recurse -Force
+                    Copy-Item -Path "$($_.FullName)\*" -Destination $destPath -Recurse -Force -ErrorAction SilentlyContinue
                 }
                 else {
                     # Copy files (READMEs, LICENSEs)
-                    Copy-Item -Path $_.FullName -Destination $cudaInstallDir -Recurse -Force
+                    Copy-Item -Path $_.FullName -Destination $cudaInstallDir -Recurse -Force -ErrorAction SilentlyContinue
                 }
             }
             
@@ -644,7 +670,6 @@ if (($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") -or ($dontUpdate -and 
 if (Test-Path $nvccExePath) {
     # Create Environment Helper
     Write-Host "Generating environment helper script..." -ForegroundColor Cyan
-    $cudaEnvScript = Join-Path $EnvironmentDir "env-cuda.ps1"
 
     # Generate Environment Helper with Clean Paths
     $cudaInstallDir = $cudaInstallDir.TrimEnd('\')
@@ -689,12 +714,12 @@ $env:VERSION_VAR_NAME = $cudaroot
 $env:CUDA_TOOLKIT_ROOT_DIR = $cudaroot
 $env:CUDA_ROOT = $cudaroot
 $env:CUDA_BIN = $cudabin + ";" + $cudabinx64 + ";" + $cudanvvmbin + ";" + $cudanvvmbinx64 + ";" + $cudacsatbin
-$env:CUDA_INCLUDEDIR = $cudainclude + ";" + $cudanvvminclude + ";" + $cudacsatinclude
-$env:CUDA_LIBRARYDIR = $cudalib + ";" + $cudalibx64 + ";" + $cudanvvmlibx64 + ";" + $cudacsatlib
-if ($env:CMAKE_PREFIX_PATH -notlike "*$cudacmakepath*") { $env:CMAKE_PREFIX_PATH = $cudacmakepath + ";" + $env:CMAKE_PREFIX_PATH }
-"$cudainclude", "$cudanvvminclude", "$cudacsatinclude" | ForEach-Object { if ($env:INCLUDE -notlike "*$_*") { $env:INCLUDE = $_ + ";" + $env:INCLUDE } }
-"$cudalib", "$cudalibx64", "$cudanvvmlibx64", "$cudacsatlib" | ForEach-Object { if ($env:LIB -notlike "*$_*") { $env:LIB = $_ + ";" + $env:LIB } }
-"$cudabin", "$cudabinx64", "$cudanvvmbin", "$cudanvvmbinx64", "$cudacsatbin" | ForEach-Object { if ($env:PATH -notlike "*$_*") { $env:PATH = $_ + ";" + $env:PATH } }
+$env:CUDA_INCLUDE_DIR = $cudainclude + ";" + $cudanvvminclude + ";" + $cudacsatinclude
+$env:CUDA_LIBRARY_DIR = $cudalib + ";" + $cudalibx64 + ";" + $cudanvvmlibx64 + ";" + $cudacsatlib
+if ($env:CMAKE_PREFIX_PATH -notlike "*$cudacmakepath*") { $env:CMAKE_PREFIX_PATH = $cudacmakepath + ";" + $env:CMAKE_PREFIX_PATH; $env:CMAKE_PREFIX_PATH = ($env:CMAKE_PREFIX_PATH).Replace(";;", ";") }
+"$cudainclude", "$cudanvvminclude", "$cudacsatinclude" | ForEach-Object { if ($env:INCLUDE -notlike "*$_*") { $env:INCLUDE = $_ + ";" + $env:INCLUDE; $env:INCLUDE = ($env:INCLUDE).Replace(";;", ";") } }
+"$cudalib", "$cudalibx64", "$cudanvvmlibx64", "$cudacsatlib" | ForEach-Object { if ($env:LIB -notlike "*$_*") { $env:LIB = $_ + ";" + $env:LIB; $env:LIB = ($env:LIB).Replace(";;", ";") } }
+"$cudabin", "$cudabinx64", "$cudanvvmbin", "$cudanvvmbinx64", "$cudacsatbin" | ForEach-Object { if ($env:PATH -notlike "*$_*") { $env:PATH = $_ + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") } }
 Write-Host "CUDA Environment Loaded (Version: $cudaversion) (Bin: $cudabin)" -ForegroundColor Green
 Write-Host "CUDA_ROOT: $env:CUDA_ROOT" -ForegroundColor Gray
 '@  -replace "VALUE_ROOT_PATH", $cudaInstallDir `
@@ -742,12 +767,12 @@ Write-Host "CUDA_ROOT: $env:CUDA_ROOT" -ForegroundColor Gray
         if (Test-Path $source) {
             if (Test-Path $target) { Remove-Item $target -Force -ErrorAction SilentlyContinue }
             try {
-                New-Item -ItemType SymbolicLink -Path $target -Value $source -ErrorAction Stop | Out-Null
+                New-Item -Path $target -ItemType SymbolicLink -Value $source -ErrorAction Stop | Out-Null
                 Write-Host "[LINKED] $cudatool in $GlobalBinDir" -ForegroundColor Gray
             }
             catch {
                 # Fallback to hardlink if developer mode is off/insufficient permissions
-                New-Item -ItemType HardLink -Path $target -Value $source | Out-Null
+                New-Item -Path $target -ItemType HardLink -Value $source | Out-Null
             }
         }
         else {
@@ -759,10 +784,8 @@ Write-Host "CUDA_ROOT: $env:CUDA_ROOT" -ForegroundColor Gray
     
     Write-Host "Cuda Toolkit Version: $cudaVersion" -ForegroundColor Gray
 
-    if ($withMachineEnvironment)
+    if ($CudaWithMachineEnvironment)
     {
-        $cudaMachineEnvScript = Join-Path $EnvironmentDir "machine-env-cuda.ps1"
-
         # Generating Machine Environment wich add to the persist registry machine Environment
         $MachineEnvContent = @'
 # CUDA Machine Environment Setup
@@ -919,11 +942,11 @@ if (Test-Path $cudaMsBuildSource) {
 
     if (Test-Path $VSinstallPath) {
         Write-Host "Integrating CUDA MSBuild Extensions into VS 2026..." -ForegroundColor Cyan
-        #if (!(Test-Path $msBuildDest)) { New-Item -Path $msBuildDest -ItemType Directory -Force | Out-Null }
+        #if (-not (Test-Path $msBuildDest)) { New-Item -Path $msBuildDest -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null }
         
         Get-ChildItem -Path $cudaMsBuildSource -File | ForEach-Object {
             $destFile = Join-Path $msBuildDest $_.Name
-            Copy-Item -Path $_.FullName -Destination $destFile -Recurse -Force
+            Copy-Item -Path $_.FullName -Destination $destFile -Recurse -Force -ErrorAction SilentlyContinue
             Write-Host "  [DEPLOYED] $($_.Name)" -ForegroundColor Gray
         }
     } else {
@@ -965,5 +988,12 @@ Write-Host "CUDA_ROOT: $env:CUDA_ROOT" -ForegroundColor Gray
     }
 } else {
     Write-Error "nvcc.exe was not found in the $cudaBinPath folder."
+    $cudatools | ForEach-Object { 
+        $globalLinkPath = Join-Path $GlobalBinDir $_
+        if (Test-Path $globalLinkPath) {
+            Write-Host "Cleaning up dead symlink at $globalLinkPath..." -ForegroundColor Yellow
+            Remove-Item $globalLinkPath -Force -ErrorAction SilentlyContinue
+        } 
+    }
     return
 }

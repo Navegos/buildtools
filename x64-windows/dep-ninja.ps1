@@ -3,15 +3,19 @@
 # file:x64-windows/dep-ninja.ps1
 
 param (
-    [Parameter(HelpMessage="Path for ninja storage", Mandatory=$false)]
+    [Parameter(HelpMessage = "Path for ninja storage", Mandatory = $false)]
     [string]$ninjaInstallDir = "$env:LIBRARIES_PATH\ninja",
 
-    [Parameter(HelpMessage = "Force a full uninstallation of the local Ninja version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Force a full purge of the local Ninja version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
     
     [Parameter(HelpMessage = "Add's Ninja Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
     [switch]$withMachineEnvironment
 )
+
+# Capture parameters
+$NinjaWithMachineEnvironment = $withMachineEnvironment
+$NinjaForceCleanup = $forceCleanup
 
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
     Write-Error "User Environment variables missing. With administrator privileges run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
@@ -29,6 +33,8 @@ $ninjaBinPath = Join-Path $ninjaInstallDir "bin"
 $ninjaExePath = Join-Path $ninjaInstallDir "ninja.exe"
 if (-not (Test-Path $ninjaExePath)) { $ninjaExePath = Join-Path $ninjaBinPath "ninja.exe" }
 $versionFile = Join-Path $ninjaInstallDir "version.json"
+$ninjaEnvScript = Join-Path $EnvironmentDir "env-ninja.ps1"
+$ninjaMachineEnvScript = Join-Path $EnvironmentDir "machine-env-ninja.ps1"
 
 # Version Detection
 $repo = "ninja-build/ninja"
@@ -57,13 +63,13 @@ function Invoke-NinjaVersionPurge {
     param ([string]$InstallPath)
     Write-Host "--- Initiating Ninja Purge ---" -ForegroundColor Cyan
 
-    if ($withMachineEnvironment)
+    if ($NinjaWithMachineEnvironment)
     {
         $ninjaCleanMachineEnvScript = Join-Path $env:TEMP "clean-machine-env-ninja.ps1"
 
         # Generating Clean Machine Environment wich removes the persist registry machine Environment
         $CleanMachineEnvContent = @'
-# Nnija Clean Machine Environment Setup
+# Ninja Clean Machine Environment Setup
 
 # --- 0. Self-Elevation Logic ---
 $IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -142,11 +148,25 @@ Write-Host "[REMOVED] ($TargetScope) all '*$ninjaroot*' removed from TOOLS_PATH"
         Remove-Item $ninjaCleanMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    # 2. Filesystem Nuke (Requires checking for locked files)
+    # 2. Filesystem Clean (Requires checking for locked files)
+    # delete everithing we create don't fail later
+    if (Test-Path $ninjaEnvScript) {
+        Write-Host "  [DELETING] $ninjaEnvScript" -ForegroundColor Yellow
+        Remove-Item $ninjaEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $ninjaMachineEnvScript) {
+        Write-Host "  [DELETING] $ninjaMachineEnvScript" -ForegroundColor Yellow
+        Remove-Item $ninjaMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    }
     if (Test-Path $InstallPath) {
         Write-Host "  [DELETING] $InstallPath" -ForegroundColor Yellow
         Remove-Item $InstallPath -Recurse -Force -ErrorAction SilentlyContinue
     }
+    
+    # remove local Env variables for current session
+    Get-ChildItem Env:\NINJA_PATH* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\NINJA_ROOT* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\NINJA_BIN* | Remove-Item -ErrorAction SilentlyContinue
 
     Write-Host "--- Ninja Purge Complete ---" -ForegroundColor Green
 }
@@ -162,7 +182,7 @@ if (Test-Path $versionFile) {
     $localVersion = (Get-Content $versionFile | ConvertFrom-Json).version
 }
 
-if ($forceCleanup) {
+if ($NinjaForceCleanup) {
     Invoke-NinjaVersionPurge -InstallPath $ninjaInstallDir
     # Reset trackers to force a fresh install
     $localVersion = "0.0.0"
@@ -181,7 +201,7 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
     $ninjaBinPath = Split-Path -Path $ninjaExePath -Parent
     $ninjaInstallDir = Split-Path -Path $ninjaBinPath -Parent
 
-    if (-not (Test-Path $versionFile)){
+    if (-not (Test-Path $versionFile)) {
         $versionInfo = @{
             url        = $url;
             tag_name   = $tag_name;
@@ -222,7 +242,7 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
         Expand-Archive -Path $zipFile -DestinationPath $tempExtractPath -Force
         
         # Ensure the \bin folder exists in the final destination
-        if (!(Test-Path $ninjaBinPath)) { New-Item -ItemType Directory -Path $ninjaBinPath -Force -ErrorAction SilentlyContinue | Out-Null }
+        if (-not (Test-Path $ninjaBinPath)) { New-Item -Path $ninjaBinPath -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null }
 
         $ninjaExePath = Join-Path $ninjaBinPath "ninja.exe"
 
@@ -252,7 +272,7 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
         # Cleanup extraction debris
         Remove-Item $zipFile -Force -ErrorAction SilentlyContinue
         Remove-Item $tempExtractPath -Recurse -Force -ErrorAction SilentlyContinue
-        
+
         Write-Host "ninja $remoteVersion Installation Complete!" -ForegroundColor DarkGreen
     }
     catch {
@@ -265,8 +285,7 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
 if (Test-Path $ninjaExePath) {
     # Create Environment Helper
     Write-Host "Generating environment helper script..." -ForegroundColor Cyan
-    $ninjaEnvScript = Join-Path $EnvironmentDir "env-ninja.ps1"
-    
+
     # Generate Environment Helper with Clean Paths
     $ninjaBinPath = $ninjaBinPath.TrimEnd('\')
     $ninjaInstallDir = $ninjaInstallDir.TrimEnd('\')
@@ -280,7 +299,7 @@ $ninjaversion = "VALUE_VERSION"
 $env:NINJA_PATH = $ninjaroot
 $env:NINJA_ROOT = $ninjaroot
 $env:NINJA_BIN = $ninjabin
-if ($env:PATH -notlike "*$ninjabin*") { $env:PATH = $ninjabin + ";" + $env:PATH }
+if ($env:PATH -notlike "*$ninjabin*") { $env:PATH = $ninjabin + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") }
 Write-Host "Ninja Environment Loaded (Version: $ninjaversion) (Bin: $ninjabin)" -ForegroundColor Green
 Write-Host "NINJA_ROOT: $env:NINJA_ROOT" -ForegroundColor Gray
 '@  -replace "VALUE_BIN_PATH", $ninjaBinPath `
@@ -304,20 +323,19 @@ Write-Host "NINJA_ROOT: $env:NINJA_ROOT" -ForegroundColor Gray
 
     # Create the Symbolic Link
     try {
-        New-Item -ItemType SymbolicLink -Path $TargetLink -Value $ninjaExePath -ErrorAction Stop | Out-Null
+        New-Item -Path $TargetLink -ItemType SymbolicLink -Value $ninjaExePath -ErrorAction Stop | Out-Null
         Write-Host "[LINKED] Ninja (Global) -> $ninjaExePath" -ForegroundColor Gray
     } catch {
-        New-Item -ItemType HardLink -Path $TargetLink -Value $ninjaExePath | Out-Null
+        New-Item -Path $TargetLink -ItemType HardLink -Value $ninjaExePath | Out-Null
+        Write-Host "[HARDLINKED] Ninja (Global) -> $ninjaExePath" -ForegroundColor Gray
     }
 
     Write-Host "[LINKED] Ninja is now globally available via %BINARIES_PATH%" -ForegroundColor Green
 
     Write-Host "Ninja Version: $(& $ninjaExePath --version)" -ForegroundColor Gray
     
-    if ($withMachineEnvironment)
+    if ($NinjaWithMachineEnvironment)
     {
-        $ninjaMachineEnvScript = Join-Path $EnvironmentDir "machine-env-ninja.ps1"
-
         # Generating Machine Environment wich add to the persist registry machine Environment
         $MachineEnvContent = @'
 # Ninja Machine Environment Setup

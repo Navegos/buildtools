@@ -1,15 +1,15 @@
 # Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:dep-libiconv.ps1
+# file:dep-bzip2.ps1
 
 param (
-    [Parameter(HelpMessage = "Target vcpkg LIBICONV triplet")]
+    [Parameter(HelpMessage = "Target vcpkg BZIP2 triplet")]
     [string]$Triplet = $null,
     
-    [Parameter(HelpMessage = "Force a full purge of the local LIBICONV version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Force a full purge of the local BZIP2 version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
     
-    [Parameter(HelpMessage = "Add's LIBICONV Machine Environment Variables. Requires Machine Administatror Rights.", Mandatory = $false)]
+    [Parameter(HelpMessage = "Add's BZIP2 Machine Environment Variables. Requires Machine Administatror Rights.", Mandatory = $false)]
     [switch]$withMachineEnvironment
 )
 
@@ -29,12 +29,12 @@ if (-not $archFolder) {
 if ($IsWindows) {
     $platform = "windows"
     if ([string]::IsNullOrWhitespace($Triplet)) { $Triplet = "x64-windows" }
-    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\dep-libiconv.ps1"
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\dep-bzip2.ps1"
 }
 elseif ($IsLinux) {
     $platform = "linux"
     if ([string]::IsNullOrWhitespace($Triplet)) { $Triplet = "x64-linux"}
-    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)/dep-libiconv.ps1"
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)/dep-bzip2.ps1"
 }
 else {
     Write-Error "Unsupported Operating System."

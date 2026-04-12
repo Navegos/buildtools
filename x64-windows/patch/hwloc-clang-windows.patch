@@ -1,0 +1,58 @@
+diff --git a/contrib/windows-cmake/CMakeLists.txt b/contrib/windows-cmake/CMakeLists.txt
+index 068e3b9a6..e0548f8e6 100644
+--- a/contrib/windows-cmake/CMakeLists.txt
++++ b/contrib/windows-cmake/CMakeLists.txt
+@@ -123,7 +123,7 @@ if(HWLOC_ENABLE_PLUGINS)
+     endif()
+ 
+     set(HWLOC_HAVE_PLUGINS 1)
+-    set(HWLOC_PLUGINS_PATH ${CMAKE_INSTALL_PREFIX}/lib/hwloc)
++    set(HWLOC_PLUGINS_PATH ${CMAKE_INSTALL_PREFIX}/bin/hwloc)
+ 
+     if(HWLOC_HAVE_CUDART)
+         list(APPEND HWLOC_ENABLED_PLUGINS_LIST "cuda")
+@@ -178,7 +178,7 @@ target_link_libraries(hwloc PRIVATE
+ )
+ 
+ if(BUILD_SHARED_LIBS)
+-    target_compile_definitions(hwloc PRIVATE $<$<BOOL:${MSVC}>:_USRDLL>)
++    target_compile_definitions(hwloc PRIVATE $<$<BOOL:${WIN32}>:_USRDLL>)
+ endif()
+ 
+ target_include_directories(hwloc PUBLIC
+@@ -203,7 +203,7 @@ foreach(plugin IN LISTS HWLOC_ENABLED_PLUGINS_LIST)
+     # common settings for all plugins
+     target_compile_definitions(hwloc_${plugin} PRIVATE "HWLOC_INSIDE_PLUGIN")
+ 
+-    target_compile_definitions(hwloc_${plugin} PRIVATE $<$<BOOL:${MSVC}>:_USRDLL>)
++    target_compile_definitions(hwloc_${plugin} PRIVATE $<$<BOOL:${WIN32}>:_USRDLL>)
+ 
+     target_include_directories(hwloc_${plugin} PUBLIC
+         "$<BUILD_INTERFACE:${TOPDIR}/include;${CMAKE_CURRENT_BINARY_DIR}/include>"
+@@ -281,7 +281,7 @@ if(NOT HWLOC_SKIP_LSTOPO)
+         ${TOPDIR}/utils/lstopo/lstopo-windows.c
+     )
+     target_compile_definitions(lstopo-win PRIVATE LSTOPO_HAVE_GRAPHICS)
+-    target_link_options(lstopo-win PRIVATE "$<$<BOOL:${MSVC}>:/subsystem:windows;/entry:mainCRTStartup>")
++    target_link_options(lstopo-win PRIVATE "$<$<BOOL:${WIN32}>:-Wl,/subsystem:windows,/entry:mainCRTStartup>")
+ 
+     foreach(tool IN ITEMS ${LSTOPOS})
+         target_include_directories(${tool} PRIVATE ${TOPDIR}/utils/hwloc)
+@@ -293,7 +293,7 @@ endif()
+ # Misc
+ 
+ foreach(target IN ITEMS hwloc ${TOOLS} ${LSTOPOS})
+-    target_compile_definitions(${target} PRIVATE $<$<BOOL:${MSVC}>:_CRT_SECURE_NO_WARNINGS>)
++    target_compile_definitions(${target} PRIVATE $<$<BOOL:${WIN32}>:_CRT_SECURE_NO_WARNINGS>)
+ endforeach(target)
+ 
+ # Install
+@@ -303,7 +303,7 @@ install(TARGETS hwloc)
+ # install plugins
+ foreach(plugin IN LISTS HWLOC_ENABLED_PLUGINS_LIST)
+     install(TARGETS hwloc_${plugin}
+-        LIBRARY DESTINATION lib/hwloc
++        LIBRARY DESTINATION bin/hwloc
+         ARCHIVE DESTINATION lib/hwloc
+         RUNTIME DESTINATION bin/hwloc
+     )

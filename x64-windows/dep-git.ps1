@@ -6,9 +6,12 @@ param (
     [Parameter(HelpMessage = "Path for git Installation", Mandatory = $false)]
     [string]$gitInstallDir = $(Join-Path $env:ProgramFiles "Git"),
     
-    [Parameter(HelpMessage = "Force a full uninstallation of the local GIT version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Force a full purge of the local GIT version before continuing", Mandatory = $false)]
     [switch]$forceCleanup
 )
+
+# Capture parameters
+$GitForceCleanup = $forceCleanup
 
 # --- 0. Self-Elevation Logic ---
 $IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -57,6 +60,7 @@ foreach ($gitool in $gittools) {
 $gitBinPath = Join-Path $gitInstallDir "cmd"
 $gitExePath = Join-Path $gitBinPath "git.exe"
 $versionFile = Join-Path $gitInstallDir "version.json"
+$gitEnvScript = Join-Path $EnvironmentDir "env-git.ps1"
 
 # Version Detection
 $repo = "git-for-windows/git"
@@ -112,12 +116,22 @@ function Invoke-GitVersionPurge {
         Write-Host "  [CLEANED] $VarName" -ForegroundColor Gray
     }
     $RegKey.Close()
-
-    # 3. Residual Folder Cleanup
+    
+    # 2. Filesystem Clean (Requires checking for locked files)
+    # delete everithing we create don't fail later
+    if (Test-Path $gitEnvScript) {
+        Write-Host "  [DELETING] $gitEnvScript" -ForegroundColor Yellow
+        Remove-Item $gitEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    }
     if (Test-Path $InstallPath) {
         Write-Host "  [DELETING] $InstallPath" -ForegroundColor Yellow
         Remove-Item $InstallPath -Recurse -Force -ErrorAction SilentlyContinue
     }
+    
+    # remove local Env variables for current session
+    Get-ChildItem Env:\GIT_PATH* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\GIT_ROOT* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\GIT_BIN* | Remove-Item -ErrorAction SilentlyContinue
 
     Write-Host "--- Git Purge Complete ---" -ForegroundColor Green
 }
@@ -133,7 +147,7 @@ if (Test-Path $versionFile) {
     $localVersion = (Get-Content $versionFile | ConvertFrom-Json).version
 }
 
-if ($forceCleanup) {
+if ($GitForceCleanup) {
     Invoke-GitVersionPurge -InstallPath $gitInstallDir
     # Reset trackers to force a fresh install
     $localVersion = "0.0.0"
@@ -319,7 +333,7 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
     Install-Or-Update-Git
 
     # --- 3. Save Version Metadata with Safety Check ---
-    if (!(Test-Path $gitInstallDir)) { New-Item -Path $gitInstallDir -ItemType Directory -Force | Out-Null }
+    if (-not (Test-Path $gitInstallDir)) { New-Item -Path $gitInstallDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null }
 
     $gitVersion = $remoteVersion
     if (Test-Path $gitExePath) {
@@ -348,7 +362,6 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
 if (Test-Path $gitExePath) {
     # Create Environment Helper
     Write-Host "Generating environment helper script..." -ForegroundColor Cyan
-    $gitEnvScript = Join-Path $EnvironmentDir "env-git.ps1"
     
     # Generate Environment Helper with Clean Paths
     $gitBinPath = $gitBinPath.TrimEnd('\')
@@ -364,7 +377,7 @@ $gitunixTools = Join-Path $gitroot "usr\bin"
 $env:GIT_PATH = $gitroot
 $env:GIT_ROOT = $gitroot
 $env:GIT_BIN = $gitbin
-"$gitunixTools", "$gitroot", "$gitbin" | ForEach-Object { if ($env:PATH -notlike "*$_*") { $env:PATH = $_ + ";" + $env:PATH } }
+"$gitunixTools", "$gitroot", "$gitbin" | ForEach-Object { if ($env:PATH -notlike "*$_*") { $env:PATH = $_ + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") } }
 Write-Host "Git Environment Loaded (Version: $gitversion) (Bin: $gitbin)" -ForegroundColor Green
 Write-Host "GIT_ROOT: $env:GIT_ROOT" -ForegroundColor Gray
 '@  -replace "VALUE_BIN_PATH", $gitBinPath `
@@ -395,12 +408,12 @@ Write-Host "GIT_ROOT: $env:GIT_ROOT" -ForegroundColor Gray
         if (Test-Path $source) {
             if (Test-Path $target) { Remove-Item $target -Force -ErrorAction SilentlyContinue }
             try {
-                New-Item -ItemType SymbolicLink -Path $target -Value $source -ErrorAction Stop | Out-Null
+                New-Item -Path $target -ItemType SymbolicLink -Value $source -ErrorAction Stop | Out-Null
                 Write-Host "[LINKED] $gittool" -ForegroundColor Gray
             }
             catch {
                 # Fallback to hardlink if developer mode is off/insufficient permissions
-                New-Item -ItemType HardLink -Path $target -Value $source | Out-Null
+                New-Item -Path $target -ItemType HardLink -Value $source | Out-Null
             }
         }
         else {
@@ -417,7 +430,7 @@ Write-Host "GIT_ROOT: $env:GIT_ROOT" -ForegroundColor Gray
     $gitName = git config --global user.name
     if ([string]::IsNullOrWhitespace($gitName)) {
         $newName = Read-Host "Git user.name not set. Please enter your name (e.g., VitorF)"
-        if (![string]::IsNullOrWhitespace($newName)) {
+        if (-not [string]::IsNullOrWhitespace($newName)) {
             git config --global user.name "$newName"
             Write-Host "  -> user.name set to: $newName" -ForegroundColor Gray
         }
@@ -430,7 +443,7 @@ Write-Host "GIT_ROOT: $env:GIT_ROOT" -ForegroundColor Gray
     $gitEmail = git config --global user.email
     if ([string]::IsNullOrWhitespace($gitEmail)) {
         $newEmail = Read-Host "Git user.email not set. Please enter your email"
-        if (![string]::IsNullOrWhitespace($newEmail)) {
+        if (-not [string]::IsNullOrWhitespace($newEmail)) {
             git config --global user.email "$newEmail"
             Write-Host "  -> user.email set to: $newEmail" -ForegroundColor Gray
         }

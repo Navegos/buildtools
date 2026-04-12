@@ -3,18 +3,24 @@
 # file:x64-windows/build-onetbb.ps1
 
 param (
-    [Parameter(HelpMessage="Base workspace path", Mandatory=$false)]
-    [string]$WorkspacePath = "",
+    [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
+    [string]$workspacePath = $null,
 
-    [Parameter(HelpMessage="oneTBB git repo url", Mandatory=$false)]
-    [string]$GitUrl = "https://github.com/Navegos/oneTBB.git",
+    [Parameter(HelpMessage = "oneTBB git repo url", Mandatory = $false)]
+    [string]$gitUrl = "https://github.com/Navegos/oneTBB.git",
     
-    [Parameter(HelpMessage="oneTBB git branch to sync from", Mandatory=$false)]
-    [string]$GitBranch = "master",
+    [Parameter(HelpMessage = "oneTBB git branch to sync from", Mandatory = $false)]
+    [string]$gitBranch = "master",
 
-    [Parameter(HelpMessage="Path for oneTBB library storage", Mandatory=$false)]
+    [Parameter(HelpMessage = "Path for oneTBB library storage", Mandatory = $false)]
     [string]$oneTBBInstallDir = "$env:LIBRARIES_PATH\oneTBB"
 )
+
+# Capture parameters
+$oneTBBWorkspacePath = $workspacePath
+$oneTBBGitUrl = $gitUrl
+$oneTBBGitBranch = $gitBranch
+$oneTBBWithMachineEnvironment = $withMachineEnvironment
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
@@ -31,7 +37,7 @@ if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
     return
 }
 
-$RootPath = if ([string]::IsNullOrWhitespace($WorkspacePath)) { Get-Location } else { $WorkspacePath }
+$RootPath = if ([string]::IsNullOrWhitespace($oneTBBWorkspacePath)) { Get-Location } else { $oneTBBWorkspacePath }
 
 # --- 2. Initialize git environment if missing ---
 if (!(Get-Command git -ErrorAction SilentlyContinue)) {
@@ -94,9 +100,11 @@ Push-Location $RootPath
 
 $Source = Join-Path $RootPath "oneTBB"
 $BuildDir   = Join-Path $Source "build_dir"  # Nested inside source
-$RepoUrl    = $GitUrl
-$Branch     = $GitBranch
+$RepoUrl    = $oneTBBGitUrl
+$Branch     = $oneTBBGitBranch
 $CMakeSource = $Source
+
+$oneTBBEnvScript = Join-Path $EnvironmentDir "env-oneTBB.ps1"
 
 # --- 7. Source Management ---
 if (Test-Path $Source) {
@@ -116,16 +124,18 @@ if (Test-Path $oneTBBInstallDir) {
     Write-Host "Wiping existing installation at $oneTBBInstallDir..." -ForegroundColor Yellow
     Remove-Item $oneTBBInstallDir -Recurse -Force -ErrorAction SilentlyContinue
 }
-New-Item -ItemType Directory -Path $oneTBBInstallDir -Force -ErrorAction SilentlyContinue | Out-Null
+New-Item -Path $oneTBBInstallDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
 
 # Ensure fresh build directory
 if (Test-Path $BuildDir) { Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue }
-New-Item -ItemType Directory -Path $BuildDir -Force -ErrorAction SilentlyContinue | Out-Null
+New-Item -Path $BuildDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
 
 Write-Host "Configuring with Clang/Ninja..." -ForegroundColor Cyan
 cmake -G "Ninja" `
     -S "$CMakeSource" `
     -B "$BuildDir" `
+    -DCMAKE_POLICY_DEFAULT_CMP0091=NEW `
+    -DCMAKE_POLICY_DEFAULT_CMP0109=NEW `
     -DCMAKE_C_COMPILER="clang" `
     -DCMAKE_CXX_COMPILER="clang++" `
     -DCMAKE_INSTALL_PREFIX="$oneTBBInstallDir" `
@@ -146,7 +156,8 @@ cmake -G "Ninja" `
     -DTBB_FILE_TRIM=ON `
     -DBUILD_SHARED_LIBS=ON `
     -DCMAKE_C_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
-    -DCMAKE_CXX_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1"
+    -DCMAKE_CXX_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
+    --no-warn-unused-cli
 
 if ($LASTEXITCODE -ne 0) { Write-Error "oneTBB CMake configuration failed."; Pop-Location; return }
 
@@ -169,7 +180,6 @@ $oneTBBCMakePath = $oneTBBInstallDir.Replace('\', '/')
 
 # --- 9. Create Environment Helper ---
 Write-Host "Generating environment helper script..." -ForegroundColor Cyan
-$oneTBBEnvScript = Join-Path $EnvironmentDir "env-oneTBB.ps1"
 $EnvContent = @'
 # TBB Environment Setup
 $oneTBBroot = "VALUE_ROOT_PATH"
@@ -180,12 +190,12 @@ $oneTBBcmakepath = "VALUE_CMAKE_PATH"
 $env:TBB_PATH = $oneTBBroot
 $env:TBB_ROOT = $oneTBBroot
 $env:TBB_BIN = $oneTBBbin
-$env:TBB_INCLUDEDIR = $oneTBBinclude
-$env:TBB_LIBRARYDIR = $oneTBBlibrary
-if ($env:CMAKE_PREFIX_PATH -notlike "*$oneTBBcmakepath*") { $env:CMAKE_PREFIX_PATH = $oneTBBcmakepath + ";" + $env:CMAKE_PREFIX_PATH }
-if ($env:INCLUDE -notlike "*$oneTBBinclude*") { $env:INCLUDE = $oneTBBinclude + ";" + $env:INCLUDE }
-if ($env:LIB -notlike "*$oneTBBlibrary*") { $env:LIB = $oneTBBlibrary + ";" + $env:LIB }
-if ($env:PATH -notlike "*$oneTBBbin*") { $env:PATH = $oneTBBbin + ";" + $env:PATH }
+$env:TBB_INCLUDE_DIR = $oneTBBinclude
+$env:TBB_LIBRARY_DIR = $oneTBBlibrary
+if ($env:CMAKE_PREFIX_PATH -notlike "*$oneTBBcmakepath*") { $env:CMAKE_PREFIX_PATH = $oneTBBcmakepath + ";" + $env:CMAKE_PREFIX_PATH; $env:CMAKE_PREFIX_PATH = ($env:CMAKE_PREFIX_PATH).Replace(";;", ";") }
+if ($env:INCLUDE -notlike "*$oneTBBinclude*") { $env:INCLUDE = $oneTBBinclude + ";" + $env:INCLUDE; $env:INCLUDE = ($env:INCLUDE).Replace(";;", ";") }
+if ($env:LIB -notlike "*$oneTBBlibrary*") { $env:LIB = $oneTBBlibrary + ";" + $env:LIB; $env:LIB = ($env:LIB).Replace(";;", ";") }
+if ($env:PATH -notlike "*$oneTBBbin*") { $env:PATH = $oneTBBbin + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") }
 Write-Host "OneTBB Environment Loaded." -ForegroundColor Green
 Write-Host "TBB_ROOT: $env:TBB_ROOT" -ForegroundColor Gray
 '@  -replace "VALUE_ROOT_PATH", $oneTBBInstallDir `
@@ -199,4 +209,4 @@ Write-Host "Created: $oneTBBEnvScript" -ForegroundColor Gray
 
 # --- Return to Start ---
 Pop-Location
-Write-Host "Done! and returned to: $(Get-Location)" -ForegroundColor Gray
+Write-Host "Successfully Done! and returned to: $(Get-Location)" -ForegroundColor DarkGreen

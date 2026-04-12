@@ -3,15 +3,19 @@
 # file:x64-windows/dep-cmake.ps1
 
 param (
-    [Parameter(HelpMessage="Path for cmake storage", Mandatory=$false)]
+    [Parameter(HelpMessage = "Path for cmake storage", Mandatory = $false)]
     [string]$cmakeInstallDir = "$env:LIBRARIES_PATH\cmake",
     
-    [Parameter(HelpMessage = "Force a full uninstallation of the local CMake version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Force a full purge of the local CMake version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
     
     [Parameter(HelpMessage = "Add's CMake Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
     [switch]$withMachineEnvironment
 )
+
+# Capture parameters
+$CMakeWithMachineEnvironment = $withMachineEnvironment
+$CMakeForceCleanup = $forceCleanup
 
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
     Write-Error "User Environment variables missing. With administrator privileges run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
@@ -31,6 +35,8 @@ foreach ($cmaketool in $cmaketools) {
 $cmakeBinPath = Join-Path $cmakeInstallDir "bin"
 $cmakeExePath = Join-Path $cmakeBinPath "cmake.exe"
 $versionFile = Join-Path $cmakeInstallDir "version.json"
+$cmakeEnvScript = Join-Path $EnvironmentDir "env-cmake.ps1"
+$cmakeMachineEnvScript = Join-Path $EnvironmentDir "machine-env-cmake.ps1"
 
 # Version Detection
 $repo = "Kitware/CMake"
@@ -42,7 +48,7 @@ try {
     $remoteVersionString = $latestRelease.tag_name.TrimStart('v')
     $refTags = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/git/ref/tags/$tag_name"
     $tagCommit = $refTags.object.sha
-    
+
     # Clean remote version for comparison (e.g., "1.12.1")
     if ($remoteVersionString -match '^(\d+\.\d+\.\d+)') { $remoteVersion = $Matches[1] }
 } catch {
@@ -59,7 +65,7 @@ function Invoke-CMakeVersionPurge {
     param ([string]$InstallPath)
     Write-Host "--- Initiating CMake Purge ---" -ForegroundColor Cyan
 
-    if ($withMachineEnvironment)
+    if ($CMakeWithMachineEnvironment)
     {
         $cmakeCleanMachineEnvScript = Join-Path $env:TEMP "clean-machine-env-cmake.ps1"
 
@@ -144,11 +150,25 @@ Write-Host "[REMOVED] ($TargetScope) all '*$cmakeroot*' removed from TOOLS_PATH"
         Remove-Item $cmakeCleanMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    # 2. Filesystem Nuke (Requires checking for locked files)
+    # 2. Filesystem Clean (Requires checking for locked files)
+    # delete everithing we create don't fail later
+    if (Test-Path $cmakeEnvScript) {
+        Write-Host "  [DELETING] $cmakeEnvScript" -ForegroundColor Yellow
+        Remove-Item $cmakeEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path $cmakeMachineEnvScript) {
+        Write-Host "  [DELETING] $cmakeMachineEnvScript" -ForegroundColor Yellow
+        Remove-Item $cmakeMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    }
     if (Test-Path $InstallPath) {
         Write-Host "  [DELETING] $InstallPath" -ForegroundColor Yellow
         Remove-Item $InstallPath -Recurse -Force -ErrorAction SilentlyContinue
     }
+    
+    # remove local Env variables for current session
+    Get-ChildItem Env:\CMAKE_PATH* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CMAKE_ROOT* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CMAKE_BIN* | Remove-Item -ErrorAction SilentlyContinue
 
     Write-Host "--- CMake Purge Complete ---" -ForegroundColor Green
 }
@@ -164,7 +184,7 @@ if (Test-Path $versionFile) {
     $localVersion = (Get-Content $versionFile | ConvertFrom-Json).version
 }
 
-if ($forceCleanup) {
+if ($CMakeForceCleanup) {
     Invoke-CMakeVersionPurge -InstallPath $cmakeInstallDir
     # Reset trackers to force a fresh install
     $localVersion = "0.0.0"
@@ -182,7 +202,7 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
     $cmakeVersion = $localVersion
     $cmakeBinPath = Split-Path -Path $cmakeExePath -Parent
     $cmakeInstallDir = Split-Path -Path $cmakeBinPath -Parent
-    
+
     if (-not (Test-Path $versionFile)) {
         $versionInfo = @{
             url        = $url;
@@ -227,7 +247,7 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
         if ($internalRoot) {
             Write-Host "Flattening directory structure..." -ForegroundColor Gray
             # Wipe old install to ensure clean update
-            if (Test-Path $cmakeBinPath) { Remove-Item "$cmakeInstallDir\*" -Recurse -Force -Exclude "version.json" }
+            if (Test-Path $cmakeBinPath) { Remove-Item "$cmakeInstallDir\*" -Recurse -Force -ErrorAction SilentlyContinue -Exclude "version.json" }
             Get-ChildItem -Path $internalRoot.FullName | Move-Item -Destination $cmakeInstallDir -Force -ErrorAction SilentlyContinue
         }
         
@@ -263,7 +283,6 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
 if (Test-Path $cmakeExePath) {
     # Helper Script Generation
     Write-Host "Generating environment helper script..." -ForegroundColor Cyan
-    $cmakeEnvScript = Join-Path $EnvironmentDir "env-cmake.ps1"
 
     # Generate Environment Helper with Clean Paths
     $cmakeBinPath = $cmakeBinPath.TrimEnd('\')
@@ -278,7 +297,7 @@ $cmakeversion = "VALUE_VERSION"
 $env:CMAKE_PATH = $cmakeroot
 $env:CMAKE_ROOT = $cmakeroot
 $env:CMAKE_BIN = $cmakebin
-if ($env:PATH -notlike "*$cmakebin*") { $env:PATH = $cmakebin + ";" + $env:PATH }
+if ($env:PATH -notlike "*$cmakebin*") { $env:PATH = $cmakebin + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") }
 Write-Host "CMake Environment Loaded (Version: $cmakeversion) (Bin: $cmakebin)" -ForegroundColor Green
 Write-Host "CMAKE_ROOT: $env:CMAKE_ROOT" -ForegroundColor Gray
 '@  -replace "VALUE_BIN_PATH", $cmakeBinPath `
@@ -301,30 +320,29 @@ Write-Host "CMAKE_ROOT: $env:CMAKE_ROOT" -ForegroundColor Gray
     foreach ($cmaketool in $cmaketools) {
         $source = Join-Path $cmakeBinPath $cmaketool
         $target = Join-Path $GlobalBinDir $cmaketool
-        
+
         if (Test-Path $source) {
             if (Test-Path $target) { Remove-Item $target -Force -ErrorAction SilentlyContinue }
             try {
-                New-Item -ItemType SymbolicLink -Path $target -Value $source -ErrorAction Stop | Out-Null
+                New-Item -Path $target -ItemType SymbolicLink -Value $source -ErrorAction Stop | Out-Null
                 Write-Host "[LINKED] $cmaketool" -ForegroundColor Gray
             } catch {
                 # Fallback to hardlink if developer mode is off/insufficient permissions
-                New-Item -ItemType HardLink -Path $target -Value $source | Out-Null
+                New-Item -Path $target -ItemType HardLink -Value $source | Out-Null
+                Write-Host "[HARDLINKED] $cmaketool (Global) -> $source" -ForegroundColor Gray
             }
         }
         else {
             Write-Warning "Optional tool $cmaketool not found in $cmakeBinPath distribution; skipping symlink."
         }
     }
-    
+
     Write-Host "[LINKED] Cmake is now globally available via %BINARIES_PATH%" -ForegroundColor Green
-    
+
     Write-Host "CMake Version: $(& $cmakeExePath --version | Select-Object -First 1)" -ForegroundColor Gray
     
-    if ($withMachineEnvironment)
+    if ($CMakeWithMachineEnvironment)
     {
-        $cmakeMachineEnvScript = Join-Path $EnvironmentDir "machine-env-cmake.ps1"
-
         # Generating Machine Environment wich add to the persist registry machine Environment
         $MachineEnvContent = @'
 # CMake Machine Environment Setup
@@ -419,5 +437,12 @@ Write-Host "CMAKE_ROOT: $env:CMAKE_ROOT" -ForegroundColor Gray
     }
 } else {
     Write-Error "cmake.exe was not found in the $cmakeBinPath folder."
+    $cmaketools | ForEach-Object { 
+        $globalLinkPath = Join-Path $GlobalBinDir $_
+        if (Test-Path $globalLinkPath) {
+            Write-Host "Cleaning up dead symlink at $globalLinkPath..." -ForegroundColor Yellow
+            Remove-Item $globalLinkPath -Force -ErrorAction SilentlyContinue
+        } 
+    }
     return
 }

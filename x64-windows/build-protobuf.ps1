@@ -3,18 +3,24 @@
 # file:x64-windows/build-protobuf.ps1
 
 param (
-    [Parameter(HelpMessage="Base workspace path", Mandatory=$false)]
-    [string]$WorkspacePath = "",
+    [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
+    [string]$workspacePath = $null,
 
-    [Parameter(HelpMessage="Protobuf git repo url", Mandatory=$false)]
-    [string]$GitUrl = "https://github.com/Navegos/protobuf.git",
+    [Parameter(HelpMessage = "Protobuf git repo url", Mandatory = $false)]
+    [string]$gitUrl = "https://github.com/Navegos/protobuf.git",
     
-    [Parameter(HelpMessage="Protobuf branch/tag (e.g. v25.1)", Mandatory=$false)]
-    [string]$GitBranch = "main",
+    [Parameter(HelpMessage = "Protobuf branch/tag (e.g. v25.1)", Mandatory = $false)]
+    [string]$gitBranch = "main",
 
-    [Parameter(HelpMessage="Path for protobuf library storage", Mandatory=$false)]
+    [Parameter(HelpMessage = "Path for protobuf library storage", Mandatory = $false)]
     [string]$protoInstallDir = "$env:LIBRARIES_PATH\protobuf"
 )
+
+# Capture parameters
+$protoWorkspacePath = $workspacePath
+$protoGitUrl = $gitUrl
+$protoGitBranch = $gitBranch
+$protoWithMachineEnvironment = $withMachineEnvironment
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
@@ -31,7 +37,7 @@ if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
     return
 }
 
-$RootPath = if ([string]::IsNullOrWhitespace($WorkspacePath)) { Get-Location } else { $WorkspacePath }
+$RootPath = if ([string]::IsNullOrWhitespace($protoWorkspacePath)) { Get-Location } else { $protoWorkspacePath }
 
 # --- 2. Initialize git environment if missing ---
 if (!(Get-Command git -ErrorAction SilentlyContinue)) {
@@ -95,9 +101,11 @@ Push-Location $RootPath
 $Source = Join-Path $RootPath "protobuf"
 $BuildDirShared = Join-Path $Source "build_shared"
 $BuildDirStatic = Join-Path $Source "build_static"
-$RepoUrl    = $GitUrl
-$Branch     = $GitBranch
+$RepoUrl    = $protoGitUrl
+$Branch     = $protoGitBranch
 $CMakeSource = Join-Path $Source "build/cmake"
+
+$protoEnvScript = Join-Path $EnvironmentDir "env-protobuf.ps1"
 
 # --- 7. Source Management ---
 if (Test-Path $Source) {
@@ -117,25 +125,25 @@ if (Test-Path $protoInstallDir) {
     Write-Host "Wiping existing installation at $protoInstallDir..." -ForegroundColor Yellow
     Remove-Item $protoInstallDir -Recurse -Force -ErrorAction SilentlyContinue
 }
-New-Item -ItemType Directory -Path $protoInstallDir -Force -ErrorAction SilentlyContinue | Out-Null
+New-Item -Path $protoInstallDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
 
 # Ensure fresh build directory
 if (Test-Path $BuildDirShared) { Remove-Item $BuildDirShared -Recurse -Force -ErrorAction SilentlyContinue }
 if (Test-Path $BuildDirStatic) { Remove-Item $BuildDirStatic -Recurse -Force -ErrorAction SilentlyContinue }
-New-Item -ItemType Directory -Path $BuildDirShared -Force -ErrorAction SilentlyContinue | Out-Null
-New-Item -ItemType Directory -Path $BuildDirStatic -Force -ErrorAction SilentlyContinue | Out-Null
+New-Item -Path $BuildDirShared -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
+New-Item -Path $BuildDirStatic -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
 
 # --- Dependencies: ---
-[string]$RootLibprotoInstallDir = Split-Path -Path $protoInstallDir -Parent
+[string]$RootlibprotoInstallDir = Split-Path -Path $protoInstallDir -Parent
 
 # Load Zlib (protobuf requirement)
-if ([string]::IsNullOrWhiteSpace($env:ZLIB_LIBRARYDIR) -or -not (Test-Path (Join-Path $env:ZLIB_LIBRARYDIR "z.lib"))) {
+if ([string]::IsNullOrWhiteSpace($env:ZLIB_LIBRARY_DIR) -or -not (Test-Path (Join-Path $env:ZLIB_LIBRARY_DIR "z.lib"))) {
     $zlibEnvScript = Join-Path $EnvironmentDir "env-zlib.ps1"
     if (Test-Path $zlibEnvScript) { . $zlibEnvScript } else {
         $zlibBuildScript = Join-Path $PSScriptRoot "build-zlib.ps1"
         if (Test-Path $zlibBuildScript) {
-            [string]$zlibInstallDir = Join-Path $RootLibprotoInstallDir "zlib"
-            & $zlibBuildScript -WorkspacePath $WorkspacePath -zlibInstallDir $zlibInstallDir
+            [string]$zlibInstallDir = Join-Path $RootlibprotoInstallDir "zlib"
+            & $zlibBuildScript -workspacePath $RootPath -zlibInstallDir $zlibInstallDir
             if (Test-Path $zlibEnvScript) { . $zlibEnvScript } else {
                 Write-Error "zlib build finished but $zlibEnvScript was not created."
                 return
@@ -150,6 +158,8 @@ if ([string]::IsNullOrWhiteSpace($env:ZLIB_LIBRARYDIR) -or -not (Test-Path (Join
 # Common CMake Flags (No tests, no examples, no docs)
 $CommonCmakeArgs = @(
     "-G", "Ninja",
+    "-DCMAKE_POLICY_DEFAULT_CMP0091=NEW",
+    "-DCMAKE_POLICY_DEFAULT_CMP0109=NEW",
     "-DCMAKE_C_COMPILER=clang",
     "-DCMAKE_CXX_COMPILER=clang++",
     "-DCMAKE_BUILD_TYPE=Release",
@@ -174,7 +184,8 @@ cmake $CommonCmakeArgs `
     -Dprotobuf_BUILD_PROTOBUF_BINARIES=OFF `
     -Dprotobuf_BUILD_PROTOC_BINARIES=OFF `
     -DCMAKE_C_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
-    -DCMAKE_CXX_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1"
+    -DCMAKE_CXX_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
+    --no-warn-unused-cli
     
 if ($LASTEXITCODE -ne 0) { Write-Error "protobuf CMake Static configuration failed."; Pop-Location; return }
 
@@ -200,7 +211,8 @@ cmake $CommonCmakeArgs `
     -Dprotobuf_BUILD_PROTOBUF_BINARIES=ON `
     -Dprotobuf_BUILD_PROTOC_BINARIES=ON `
     -DCMAKE_C_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
-    -DCMAKE_CXX_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1"
+    -DCMAKE_CXX_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
+    --no-warn-unused-cli
 
 if ($LASTEXITCODE -ne 0) { Write-Error "protobuf CMake Shared (DLL) configuration failed."; Pop-Location; return }
 
@@ -223,7 +235,6 @@ $protoCMakePath = $protoInstallDir.Replace('\', '/')
 
 # --- 11. Create Environment Helper ---
 Write-Host "Generating environment helper script..." -ForegroundColor Cyan
-$protoEnvScript = Join-Path $EnvironmentDir "env-protobuf.ps1"
 $EnvContent = @'
 # PROTOBUF Environment Setup
 $protoroot = "VALUE_ROOT_PATH"
@@ -234,12 +245,12 @@ $protocmakepath = "VALUE_CMAKE_PATH"
 $env:PROTOBUF_PATH = $protoroot
 $env:PROTOBUF_ROOT = $protoroot
 $env:PROTOBUF_BIN = $protobin
-$env:PROTOBUF_INCLUDEDIR = $protoinclude
-$env:PROTOBUF_LIBRARYDIR = $protolibrary
-if ($env:CMAKE_PREFIX_PATH -notlike "*$protocmakepath*") { $env:CMAKE_PREFIX_PATH = $protocmakepath + ";" + $env:CMAKE_PREFIX_PATH }
-if ($env:INCLUDE -notlike "*$protoinclude*") { $env:INCLUDE = $protoinclude + ";" + $env:INCLUDE }
-if ($env:LIB -notlike "*$protolibrary*") { $env:LIB = $protolibrary + ";" + $env:LIB }
-if ($env:PATH -notlike "*$protobin*") { $env:PATH = $protobin + ";" + $env:PATH }
+$env:PROTOBUF_INCLUDE_DIR = $protoinclude
+$env:PROTOBUF_LIBRARY_DIR = $protolibrary
+if ($env:CMAKE_PREFIX_PATH -notlike "*$protocmakepath*") { $env:CMAKE_PREFIX_PATH = $protocmakepath + ";" + $env:CMAKE_PREFIX_PATH; $env:CMAKE_PREFIX_PATH = ($env:CMAKE_PREFIX_PATH).Replace(";;", ";") }
+if ($env:INCLUDE -notlike "*$protoinclude*") { $env:INCLUDE = $protoinclude + ";" + $env:INCLUDE; $env:INCLUDE = ($env:INCLUDE).Replace(";;", ";") }
+if ($env:LIB -notlike "*$protolibrary*") { $env:LIB = $protolibrary + ";" + $env:LIB; $env:LIB = ($env:LIB).Replace(";;", ";") }
+if ($env:PATH -notlike "*$protobin*") { $env:PATH = $protobin + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") }
 Write-Host "PROTOBUF Environment Loaded." -ForegroundColor Green
 Write-Host "PROTOBUF_ROOT: $env:PROTOBUF_ROOT" -ForegroundColor Gray
 '@  -replace "VALUE_ROOT_PATH", $protoInstallDir `
@@ -253,4 +264,4 @@ Write-Host "Created: $protoEnvScript" -ForegroundColor Gray
 
 # --- Return to Start ---
 Pop-Location
-Write-Host "Done! and returned to: $(Get-Location)" -ForegroundColor Gray
+Write-Host "Successfully Done! and returned to: $(Get-Location)" -ForegroundColor DarkGreen
