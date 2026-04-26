@@ -1,6 +1,9 @@
-# Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:x64-windows/dep-python.ps1
+# project: buildtools
+# file: x64-windows/dep-python.ps1
+# created: 2026-03-14
+# lastModified: 2026-04-26
 
 param (
     [Parameter(HelpMessage = "Path for python storage", Mandatory = $false)]
@@ -623,6 +626,7 @@ if (Test-Path $pythonExePath) {
     $pythonBinPath = $pythonBinPath.TrimEnd('\')
     $pythonInstallDir = $pythonInstallDir.TrimEnd('\')
     $pythonScriptsPath = $pythonScriptsPath.TrimEnd('\')
+    $pythonExePath = Join-Path $pythonInstallDir "python.exe"
 
     # Using a literal here-string with -replace to avoid accidental expansion of $env:PATH during creation
     $EnvContent = @'
@@ -630,17 +634,26 @@ if (Test-Path $pythonExePath) {
 $pythonroot = "VALUE_ROOT_PATH"
 $pythonbin = "VALUE_BIN_PATH"
 $pythonscripts = "VALUE_SCRIPTS_PATH"
+$pythonexe = "VALUE_EXE_PATH"
 $pythonversion = "VALUE_VERSION"
 $env:PYTHON_PATH = $pythonroot
 $env:PYTHON_ROOT = $pythonroot
 $env:PYTHON_BIN = $pythonbin
 $env:PYTHON_SCRIPTS = $pythonscripts
+$env:BINARY_PYTHON = $pythonexe
+$env:PYTHON_VERSION = $pythonversion
+$env:PYTHON_MAJOR = ([version]$pythonversion).Major
+$env:PYTHON_MINOR = ([version]$pythonversion).Minor
+$env:PYTHON_PATCH = ([version]$pythonversion).Patch
+$env:PYTHON_ABI_VERSION = ([version]$pythonversion).ToString(2)
+$env:PYTHON_SO_VERSION = ([version]$pythonversion).ToString(1)
 if ($env:PATH -notlike "*$pythonbin*") { $env:PATH = $pythonbin + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") }
 if ($env:PATH -notlike "*$pythonscripts*") { $env:PATH = $env:PATH + ";" + $pythonscripts; $env:PATH = ($env:PATH).Replace(";;", ";") }
 #"$pythonscripts", "$pythonbin" | ForEach-Object { if ($env:PATH -notlike "*$_*") { $env:PATH = $_ + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") } }
 Write-Host "Python Environment Loaded (Version: $pythonversion) (Bin: $pythonbin)" -ForegroundColor Green
 Write-Host "PYTHON_ROOT: $env:PYTHON_ROOT" -ForegroundColor Gray
 '@  -replace "VALUE_BIN_PATH", $pythonBinPath `
+    -replace "VALUE_EXE_PATH", $pythonExePath `
     -replace "VALUE_ROOT_PATH", $pythonInstallDir `
     -replace "VALUE_SCRIPTS_PATH", $pythonScriptsPath `
     -replace "VALUE_VERSION", $pythonVersion

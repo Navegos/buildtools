@@ -1,6 +1,9 @@
-# Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:dep-cuda.ps1
+# project: buildtools
+# file: dep-cuda.ps1
+# created: 2026-03-23
+# lastModified: 2026-04-26
 
 param (
     [Parameter(HelpMessage = "Base path for cuda storage like path\cuda", Mandatory = $false)]
@@ -21,8 +24,8 @@ param (
     [Parameter(HelpMessage = "Minimum Fallback CUDNN Version", Mandatory = $false)]
     [string]$cudnnVersion = "9.20.0",
     
-    [Parameter(HelpMessage = "Full link for TensorRT package", Mandatory = $false)]
-    [string]$tensorrtLink = "https://developer.nvidia.com/downloads/compute/machine-learning/tensorrt/10.16.0/zip/TensorRT-10.16.0.72.Windows.amd64.cuda-13.2.zip",
+    [Parameter(HelpMessage = "Requires member of NVIDIA Developer Program and accept the license terms before download the full link for TensorRT package", Mandatory = $false)]
+    [string]$tensorrtLink = $null,
     
     [Parameter(HelpMessage = "Force a full purge of the local CUDA version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,

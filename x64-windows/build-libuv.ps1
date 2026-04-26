@@ -1,6 +1,9 @@
-# Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:x64-windows/build-libuv.ps1
+# project: buildtools
+# file: x64-windows/build-libuv.ps1
+# created: 2026-03-05
+# lastModified: 2026-04-26
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -14,6 +17,9 @@ param (
     
     [Parameter(HelpMessage = "Path for libuv library storage", Mandatory = $false)]
     [string]$libuvInstallDir = "$env:LIBRARIES_PATH\libuv",
+    
+    [Parameter(HelpMessage = "Lib name, if it's building with a different name (fixit by changing it's default name beforehand)", Mandatory = $false)]
+    [string]$libuvLibName = "uv",
     
     [Parameter(HelpMessage = "Force a full purge of the local libuv version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
@@ -45,10 +51,10 @@ if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
 }
 
 # --- 2. Initialize git environment if missing ---
-if (-not $env:GIT_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_GIT) -or -not (Test-Path $env:BINARY_GIT)) {
     $gitEnvScript = Join-Path $EnvironmentDir "env-git.ps1"
     if (Test-Path $gitEnvScript) { . $gitEnvScript } 
-    if (-not $env:GIT_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_GIT) -or -not (Test-Path $env:BINARY_GIT)) {
         $depgitEnvScript = Join-Path $PSScriptRoot "dep-git.ps1"
         if (Test-Path $depgitEnvScript) { . $depgitEnvScript }
         else {
@@ -59,10 +65,10 @@ if (-not $env:GIT_PATH) {
 }
 
 # --- 3. Initialize cmake environment if missing ---
-if (-not $env:CMAKE_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_CMAKE) -or -not (Test-Path $env:BINARY_CMAKE)) {
     $cmakeEnvScript = Join-Path $EnvironmentDir "env-cmake.ps1"
     if (Test-Path $cmakeEnvScript) { . $cmakeEnvScript } 
-    if (-not $env:CMAKE_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_CMAKE) -or -not (Test-Path $env:BINARY_CMAKE)) {
         $depcmakeEnvScript = Join-Path $PSScriptRoot "dep-cmake.ps1"
         if (Test-Path $depcmakeEnvScript) { . $depcmakeEnvScript }
         else {
@@ -73,10 +79,10 @@ if (-not $env:CMAKE_PATH) {
 }
 
 # --- 4. Initialize ninja environment if missing ---
-if (-not $env:NINJA_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_NINJA) -or -not (Test-Path $env:BINARY_NINJA)) {
     $ninjaEnvScript = Join-Path $EnvironmentDir "env-ninja.ps1"
     if (Test-Path $ninjaEnvScript) { . $ninjaEnvScript }
-    if (-not $env:NINJA_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_NINJA) -or -not (Test-Path $env:BINARY_NINJA)) {
         $depninjaEnvScript = Join-Path $PSScriptRoot "dep-ninja.ps1"
         if (Test-Path $depninjaEnvScript) { . $depninjaEnvScript }
         else {
@@ -87,10 +93,10 @@ if (-not $env:NINJA_PATH) {
 }
 
 # --- 5. Initialize clang environment if missing ---
-if (-not $env:LLVM_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_CLANG) -or -not (Test-Path $env:BINARY_CLANG)) {
     $llvmEnvScript = Join-Path $EnvironmentDir "env-llvm.ps1"
     if (Test-Path $llvmEnvScript) { . $llvmEnvScript }
-    if (-not $env:LLVM_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_CLANG) -or -not (Test-Path $env:BINARY_CLANG)) {
         $depllvmEnvScript = Join-Path $PSScriptRoot "dep-llvm.ps1"
         if (Test-Path $depllvmEnvScript) { . $depllvmEnvScript }
         else {
@@ -230,10 +236,53 @@ Write-Host "[REMOVED] ($TargetScope) all '*$libuvroot*' removed from EXTCOMPLIBS
     Get-ChildItem Env:\LIBUV_BIN* | Remove-Item -ErrorAction SilentlyContinue
     Get-ChildItem Env:\LIBUV_INCLUDE_DIR* | Remove-Item -ErrorAction SilentlyContinue
     Get-ChildItem Env:\LIBUV_LIBRARY_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BINARY_LIB_LIBUV* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\SHARED_LIB_LIBUV* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\STATIC_LIB_LIBUV* | Remove-Item -ErrorAction SilentlyContinue
-
+    Get-ChildItem Env:\BINARY_LIB_UV* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\SHARED_LIB_UV* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\STATIC_LIB_UV* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LIBUV_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LIBUV_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LIBUV_MAJOR* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LIBUV_MINOR* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LIBUV_PATCH* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LIBUV_ABI_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LIBUV_SO_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    
+    $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
+    $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewCMakePrefixPath = ($CleanedCMakePrefixPathList -join ";").Replace(";;", ";")
+    $NewCMakePrefixPath = ($NewCMakePrefixPath + ";").Replace(";;", ";")
+    $env:CMAKE_PREFIX_PATH = $NewCMakePrefixPath
+    
+    $CurrentIncludePath = $env:INCLUDE
+    $CleanedIncludePathList = $CurrentIncludePath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewIncludePath = ($CleanedIncludePathList -join ";").Replace(";;", ";")
+    $NewIncludePath = ($NewIncludePath + ";").Replace(";;", ";")
+    $env:INCLUDE = $NewIncludePath
+    
+    $CurrentLibPath = $env:LIB
+    $CleanedLibPathList = $CurrentLibPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewLibPath = ($CleanedLibPathList -join ";").Replace(";;", ";")
+    $NewLibPath = ($NewLibPath + ";").Replace(";;", ";")
+    $env:LIB = $NewLibPath
+    
+    $CurrentPath = $env:PATH
+    $CleanedPathList = $CurrentPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewPath = ($CleanedPathList -join ";").Replace(";;", ";")
+    $NewPath = ($NewPath + ";").Replace(";;", ";")
+    $env:PATH = $NewPath
+    
     Write-Host "--- LIBUV Purge Complete ---" -ForegroundColor Green
 }
 
@@ -307,9 +356,9 @@ $libuvLibDir = Join-Path $libuvInstallDir "lib"
 $libuvBinPath = Join-Path $libuvInstallDir "bin"
 $libuvCMakePath = $libuvInstallDir.Replace('\', '/')
 
-$StaticLib = Join-Path $libuvLibDir "libuv.lib"
-$SharedLib = Join-Path $libuvLibDir "uv.lib"
-$BinaryLib = Join-Path $libuvBinPath "uv.dll"
+$StaticLib = Join-Path $libuvLibDir ("lib" + "$libuvLibName" + ".lib")
+$SharedLib = Join-Path $libuvLibDir "$libuvLibName.lib"
+$BinaryLib = Join-Path $libuvBinPath "$libuvLibName.dll"
 $versionFile = Join-Path $libuvInstallDir "version.json"
 
 # Fallback check for "z.lib" / "zs.lib" naming convention
@@ -322,6 +371,7 @@ if ((Test-Path $StaticLib) -or (Test-Path $SharedLib) -or (Test-Path $BinaryLib)
     if (-not (Test-Path $libuvHeader)) { $libuvHeader = Join-Path $Source "uv\version.h" }
     $localVersion = "0.0.0"
     $rawVersion = $Branch
+    $binaryversion = "0"
     
     if (Test-Path $libuvHeader) {
         # Extract version from #define #define UV_VERSION_MAJOR  #define UV_VERSION_MINOR #define UV_VERSION_RELEASE
@@ -335,6 +385,7 @@ if ((Test-Path $StaticLib) -or (Test-Path $SharedLib) -or (Test-Path $BinaryLib)
         if ($major -and $minor -and $rel) {
             $localVersion = "$major.$minor.$rel"
             $rawVersion = $localVersion
+            $binaryversion = ([version]$localVersion).Major
             Write-Host "[VERSION] Detected libuv: $localVersion" -ForegroundColor Cyan
         }
     }
@@ -347,6 +398,8 @@ if ((Test-Path $StaticLib) -or (Test-Path $SharedLib) -or (Test-Path $BinaryLib)
         commit     = $tagCommit;
         version    = $localVersion;
         rawversion = $rawVersion;
+        abiversion = $binaryversion;
+        soversion  = $binaryversion;
         date       = (Get-Date).ToString("yyyy-MM-dd");
         updated_at = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ");
         type       = "source_build";
@@ -362,18 +415,28 @@ $libuvinclude = "VALUE_INCLUDE_PATH"
 $libuvlibrary = "VALUE_LIB_PATH"
 $libuvbin = "VALUE_BIN_PATH"
 $libuvversion = "VALUE_VERSION"
+$libuvabiversion = "VALUE_ABI_VERSION"
+$libuvsoversion = "VALUE_SO_VERSION"
 $libuvbinary = "VALUE_BINARY"
 $libuvshared = "VALUE_SHARED"
 $libuvstatic = "VALUE_STATIC"
+$libuvlibname = "VALUE_LIB_NAME"
 $libuvcmakepath = "VALUE_CMAKE_PATH"
 $env:LIBUV_PATH = $libuvroot
 $env:LIBUV_ROOT = $libuvroot
 $env:LIBUV_BIN = $libuvbin
 $env:LIBUV_INCLUDE_DIR = $libuvinclude
 $env:LIBUV_LIBRARY_DIR = $libuvlibrary
-$env:BINARY_LIB_LIBUV = $libuvbinary
-$env:SHARED_LIB_LIBUV = $libuvshared
-$env:STATIC_LIB_LIBUV = $libuvstatic
+$env:BINARY_LIB_UV = $libuvbinary
+$env:SHARED_LIB_UV = $libuvshared
+$env:STATIC_LIB_UV = $libuvstatic
+$env:LIBUV_LIB_NAME = $libuvlibname
+$env:LIBUV_VERSION = $libuvversion
+$env:LIBUV_MAJOR = ([version]$libuvversion).Major
+$env:LIBUV_MINOR = ([version]$libuvversion).Minor
+$env:LIBUV_PATCH = ([version]$libuvversion).Patch
+$env:LIBUV_ABI_VERSION = $libuvabiversion
+$env:LIBUV_SO_VERSION = $libuvsoversion
 if ($env:CMAKE_PREFIX_PATH -notlike "*$libuvcmakepath*") { $env:CMAKE_PREFIX_PATH = $libuvcmakepath + ";" + $env:CMAKE_PREFIX_PATH; $env:CMAKE_PREFIX_PATH = ($env:CMAKE_PREFIX_PATH).Replace(";;", ";") }
 if ($env:INCLUDE -notlike "*$libuvinclude*") { $env:INCLUDE = $libuvinclude + ";" + $env:INCLUDE; $env:INCLUDE = ($env:INCLUDE).Replace(";;", ";") }
 if ($env:LIB -notlike "*$libuvlibrary*") { $env:LIB = $libuvlibrary + ";" + $env:LIB; $env:LIB = ($env:LIB).Replace(";;", ";") }
@@ -385,9 +448,12 @@ Write-Host "LIBUV_ROOT: $env:LIBUV_ROOT" -ForegroundColor Gray
     -replace "VALUE_LIB_PATH", $libuvLibDir `
     -replace "VALUE_BIN_PATH", $libuvBinPath `
     -replace "VALUE_VERSION", $libuvVersion `
+    -replace "VALUE_ABI_VERSION", $binaryversion `
+    -replace "VALUE_SO_VERSION", $binaryversion `
     -replace "VALUE_SHARED", $SharedLib `
     -replace "VALUE_BINARY", $BinaryLib `
     -replace "VALUE_STATIC", $StaticLib `
+    -replace "VALUE_LIB_NAME", $libuvLibName `
     -replace "VALUE_CMAKE_PATH", $libuvCMakePath
 
     $EnvContent | Out-File -FilePath $libuvEnvScript -Encoding utf8

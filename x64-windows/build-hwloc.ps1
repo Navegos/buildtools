@@ -1,6 +1,9 @@
-# Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:x64-windows/build-hwloc.ps1
+# project: buildtools
+# file: x64-windows/build-hwloc.ps1
+# created: 2026-03-14
+# lastModified: 2026-04-26
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -14,6 +17,9 @@ param (
 
     [Parameter(HelpMessage = "Path for hwloc library storage", Mandatory = $false)]
     [string]$hwlocInstallDir = "$env:LIBRARIES_PATH\hwloc",
+    
+    [Parameter(HelpMessage = "Lib name, if it's building with a different name (fixit by changing it's default name beforehand)", Mandatory = $false)]
+    [string]$hwlocLibName = "hwloc",
     
     [Parameter(HelpMessage = "Force a full purge of the local hwloc version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
@@ -45,10 +51,10 @@ if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
 }
 
 # --- 2. Initialize git environment if missing ---
-if (-not $env:GIT_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_GIT) -or -not (Test-Path $env:BINARY_GIT)) {
     $gitEnvScript = Join-Path $EnvironmentDir "env-git.ps1"
     if (Test-Path $gitEnvScript) { . $gitEnvScript } 
-    if (-not $env:GIT_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_GIT) -or -not (Test-Path $env:BINARY_GIT)) {
         $depgitEnvScript = Join-Path $PSScriptRoot "dep-git.ps1"
         if (Test-Path $depgitEnvScript) { . $depgitEnvScript }
         else {
@@ -59,10 +65,10 @@ if (-not $env:GIT_PATH) {
 }
 
 # --- 3. Initialize cmake environment if missing ---
-if (-not $env:CMAKE_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_CMAKE) -or -not (Test-Path $env:BINARY_CMAKE)) {
     $cmakeEnvScript = Join-Path $EnvironmentDir "env-cmake.ps1"
     if (Test-Path $cmakeEnvScript) { . $cmakeEnvScript } 
-    if (-not $env:CMAKE_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_CMAKE) -or -not (Test-Path $env:BINARY_CMAKE)) {
         $depcmakeEnvScript = Join-Path $PSScriptRoot "dep-cmake.ps1"
         if (Test-Path $depcmakeEnvScript) { . $depcmakeEnvScript }
         else {
@@ -73,10 +79,10 @@ if (-not $env:CMAKE_PATH) {
 }
 
 # --- 4. Initialize ninja environment if missing ---
-if (-not $env:NINJA_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_NINJA) -or -not (Test-Path $env:BINARY_NINJA)) {
     $ninjaEnvScript = Join-Path $EnvironmentDir "env-ninja.ps1"
     if (Test-Path $ninjaEnvScript) { . $ninjaEnvScript }
-    if (-not $env:NINJA_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_NINJA) -or -not (Test-Path $env:BINARY_NINJA)) {
         $depninjaEnvScript = Join-Path $PSScriptRoot "dep-ninja.ps1"
         if (Test-Path $depninjaEnvScript) { . $depninjaEnvScript }
         else {
@@ -87,10 +93,10 @@ if (-not $env:NINJA_PATH) {
 }
 
 # --- 5. Initialize clang environment if missing ---
-if (-not $env:LLVM_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_CLANG) -or -not (Test-Path $env:BINARY_CLANG)) {
     $llvmEnvScript = Join-Path $EnvironmentDir "env-llvm.ps1"
     if (Test-Path $llvmEnvScript) { . $llvmEnvScript }
-    if (-not $env:LLVM_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_CLANG) -or -not (Test-Path $env:BINARY_CLANG)) {
         $depllvmEnvScript = Join-Path $PSScriptRoot "dep-llvm.ps1"
         if (Test-Path $depllvmEnvScript) { . $depllvmEnvScript }
         else {
@@ -105,10 +111,10 @@ $RoothwlocInstallDir = Split-Path -Path $hwlocInstallDir -Parent
 $RoothwlocWorkspacePath = if ([string]::IsNullOrWhitespace($hwlocWorkspacePath)) { Get-Location } else { $hwlocWorkspacePath }
 
 # Load libxml2 requirement
-if ([string]::IsNullOrWhiteSpace($env:LIBXML2_LIBRARY_DIR) -or -not (Test-Path (Join-Path $env:LIBXML2_LIBRARY_DIR "libxml2.lib"))) {
+if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_XML2) -or -not (Test-Path $env:SHARED_LIB_XML2)) {
     $libxml2EnvScript = Join-Path $EnvironmentDir "env-libxml2.ps1"
     if (Test-Path $libxml2EnvScript) { . $libxml2EnvScript }
-    if ([string]::IsNullOrWhiteSpace($env:LIBXML2_LIBRARY_DIR) -or -not (Test-Path (Join-Path $env:LIBXML2_LIBRARY_DIR "libxml2.lib"))) {
+    if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_XML2) -or -not (Test-Path $env:SHARED_LIB_XML2)) {
         $libxml2BuildScript = Join-Path $PSScriptRoot "build-libxml2.ps1"
         if (Test-Path $libxml2BuildScript) {
             $libxml2InstallDir = Join-Path $RoothwlocInstallDir "libxml2"
@@ -121,10 +127,10 @@ if ([string]::IsNullOrWhiteSpace($env:LIBXML2_LIBRARY_DIR) -or -not (Test-Path (
 }
 
 # Load cuda requirement
-if ([string]::IsNullOrWhitespace($env:CUDA_PATH) -or -not (Test-Path (Join-Path $env:CUDA_PATH "bin\nvcc.exe"))) {
+if ([string]::IsNullOrWhitespace($env:BINARY_NVCC) -or -not (Test-Path $env:BINARY_NVCC)) {
     $cudaEnvScript = Join-Path $EnvironmentDir "env-cuda.ps1"
     if (Test-Path $cudaEnvScript) { . $cudaEnvScript }
-    if ([string]::IsNullOrWhitespace($env:CUDA_PATH) -or -not (Test-Path (Join-Path $env:CUDA_PATH "bin\nvcc.exe"))) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_NVCC) -or -not (Test-Path $env:BINARY_NVCC)) {
         $depcudaEnvScript = Join-Path $PSScriptRoot "dep-cuda.ps1"
         if (Test-Path $depcudaEnvScript) { . $depcudaEnvScript }
         else {
@@ -135,10 +141,10 @@ if ([string]::IsNullOrWhitespace($env:CUDA_PATH) -or -not (Test-Path (Join-Path 
 }
 
 # Load pkgconf requirement
-if ([string]::IsNullOrWhitespace($env:PKGCONF_PATH) -or -not (Test-Path (Join-Path $env:PKGCONF_PATH "bin\pkgconf.exe"))) {
+if ([string]::IsNullOrWhitespace($env:BINARY_PKGCONF) -or -not (Test-Path $env:BINARY_PKGCONF)) {
     $pkgconfEnvScript = Join-Path $EnvironmentDir "env-pkgconf.ps1"
     if (Test-Path $pkgconfEnvScript) { . $pkgconfEnvScript }
-    if ([string]::IsNullOrWhitespace($env:PKGCONF_PATH) -or -not (Test-Path (Join-Path $env:PKGCONF_PATH "bin\pkgconf.exe"))) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_PKGCONF) -or -not (Test-Path $env:BINARY_PKGCONF)) {
         $deppkgconfEnvScript = Join-Path $PSScriptRoot "dep-pkgconf.ps1"
         if (Test-Path $deppkgconfEnvScript) { . $deppkgconfEnvScript }
         else {
@@ -283,7 +289,50 @@ Write-Host "[REMOVED] ($TargetScope) all '*$hwlocroot*' removed from EXTCOMPLIBS
     Get-ChildItem Env:\BINARY_LIB_HWLOC* | Remove-Item -ErrorAction SilentlyContinue
     Get-ChildItem Env:\SHARED_LIB_HWLOC* | Remove-Item -ErrorAction SilentlyContinue
     Get-ChildItem Env:\STATIC_LIB_HWLOC* | Remove-Item -ErrorAction SilentlyContinue
-
+    Get-ChildItem Env:\HWLOC_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\HWLOC_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\HWLOC_MAJOR* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\HWLOC_MINOR* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\HWLOC_PATCH* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\HWLOC_ABI_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\HWLOC_SO_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    
+    $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
+    $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewCMakePrefixPath = ($CleanedCMakePrefixPathList -join ";").Replace(";;", ";")
+    $NewCMakePrefixPath = ($NewCMakePrefixPath + ";").Replace(";;", ";")
+    $env:CMAKE_PREFIX_PATH = $NewCMakePrefixPath
+    
+    $CurrentIncludePath = $env:INCLUDE
+    $CleanedIncludePathList = $CurrentIncludePath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewIncludePath = ($CleanedIncludePathList -join ";").Replace(";;", ";")
+    $NewIncludePath = ($NewIncludePath + ";").Replace(";;", ";")
+    $env:INCLUDE = $NewIncludePath
+    
+    $CurrentLibPath = $env:LIB
+    $CleanedLibPathList = $CurrentLibPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewLibPath = ($CleanedLibPathList -join ";").Replace(";;", ";")
+    $NewLibPath = ($NewLibPath + ";").Replace(";;", ";")
+    $env:LIB = $NewLibPath
+    
+    $CurrentPath = $env:PATH
+    $CleanedPathList = $CurrentPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewPath = ($CleanedPathList -join ";").Replace(";;", ";")
+    $NewPath = ($NewPath + ";").Replace(";;", ";")
+    $env:PATH = $NewPath
+    
     Write-Host "--- HWLOC Purge Complete ---" -ForegroundColor Green
 }
 
@@ -479,13 +528,13 @@ $hwlocLibDir = Join-Path $hwlocInstallDir "lib"
 $hwlocBinPath = Join-Path $hwlocInstallDir "bin"
 $hwlocCMakePath = $hwlocInstallDir.Replace('\', '/')
 
-$StaticLib = Join-Path $hwlocLibDir "hwlocstatic.lib"
-$SharedLib = Join-Path $hwlocLibDir "hwloc.lib"
-$BinaryLib = Join-Path $hwlocBinPath "hwloc.dll"
+$StaticLib = Join-Path $hwlocLibDir ("$hwlocLibName" + "static.lib")
+$SharedLib = Join-Path $hwlocLibDir "$hwlocLibName.lib"
+$BinaryLib = Join-Path $hwlocBinPath "$hwlocLibName.dll"
 $versionFile = Join-Path $hwlocInstallDir "version.json"
 
 # Fallback check for "hwloc.lib" / "hwlocs.lib" naming convention
-if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $hwlocLibDir "hwlocs.lib" }
+if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $hwlocLibDir ("$hwlocLibName" + "s.lib") }
 #if (-not (Test-Path $SharedLib)) { $SharedLib = Join-Path $hwlocLibDir "hwloc.lib" }
 #if (-not (Test-Path $BinaryLib)) { $BinaryLib = Join-Path $hwlocBinPath "hwloc.dll" }
 
@@ -509,6 +558,7 @@ foreach ($hwloctool in $hwloctools) {
 if ((Test-Path $StaticLib) -or (Test-Path $SharedLib) -or (Test-Path $BinaryLib)) {
     $localVersion = "0.0.0"
     $rawVersion = $Branch
+    $binaryversion = "0"
     
     if (Test-Path $hwlocHeader) {
         # Extract version from #define #define HWLOC_VERSION_MAJOR  #define HWLOC_VERSION_MINOR #define HWLOC_VERSION_RELEASE
@@ -522,6 +572,7 @@ if ((Test-Path $StaticLib) -or (Test-Path $SharedLib) -or (Test-Path $BinaryLib)
         if ($major -and $minor -and $rel) {
             $localVersion = "$major.$minor.$rel"
             $rawVersion = $localVersion
+            $binaryversion = ([version]$localVersion).Major
             Write-Host "[VERSION] Detected hwloc: $localVersion" -ForegroundColor Cyan
         }
     }
@@ -534,6 +585,8 @@ if ((Test-Path $StaticLib) -or (Test-Path $SharedLib) -or (Test-Path $BinaryLib)
         commit     = $tagCommit;
         version    = $localVersion;
         rawversion = $rawVersion;
+        abiversion = $binaryversion;
+        soversion  = $binaryversion;
         date       = (Get-Date).ToString("yyyy-MM-dd");
         updated_at = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ");
         type       = "source_build";
@@ -578,9 +631,12 @@ $hwlocinclude = "VALUE_INCLUDE_PATH"
 $hwloclibrary = "VALUE_LIB_PATH"
 $hwlocbin = "VALUE_BIN_PATH"
 $hwlocversion = "VALUE_VERSION"
+$hwlocabiversion = "VALUE_ABI_VERSION"
+$hwlocsoversion = "VALUE_SO_VERSION"
 $hwlocbinary = "VALUE_BINARY"
 $hwlocshared = "VALUE_SHARED"
 $hwlocstatic = "VALUE_STATIC"
+$hwloclibname = "VALUE_LIB_NAME"
 $hwloccmakepath = "VALUE_CMAKE_PATH"
 $env:HWLOC_PATH = $hwlocroot
 $env:HWLOC_ROOT = $hwlocroot
@@ -590,6 +646,13 @@ $env:HWLOC_LIBRARY_DIR = $hwloclibrary
 $env:BINARY_LIB_HWLOC = $hwlocbinary
 $env:SHARED_LIB_HWLOC = $hwlocshared
 $env:STATIC_LIB_HWLOC = $hwlocstatic
+$env:HWLOC_LIB_NAME = $hwloclibname
+$env:HWLOC_VERSION = $hwlocversion
+$env:HWLOC_MAJOR = ([version]$hwlocversion).Major
+$env:HWLOC_MINOR = ([version]$hwlocversion).Minor
+$env:HWLOC_PATCH = ([version]$hwlocversion).Patch
+$env:HWLOC_ABI_VERSION = $hwlocabiversion
+$env:HWLOC_SO_VERSION = $hwlocsoversion
 if ($env:CMAKE_PREFIX_PATH -notlike "*$hwloccmakepath*") { $env:CMAKE_PREFIX_PATH = $hwloccmakepath + ";" + $env:CMAKE_PREFIX_PATH; $env:CMAKE_PREFIX_PATH = ($env:CMAKE_PREFIX_PATH).Replace(";;", ";") }
 if ($env:INCLUDE -notlike "*$hwlocinclude*") { $env:INCLUDE = $hwlocinclude + ";" + $env:INCLUDE; $env:INCLUDE = ($env:INCLUDE).Replace(";;", ";") }
 if ($env:LIB -notlike "*$hwloclibrary*") { $env:LIB = $hwloclibrary + ";" + $env:LIB; $env:LIB = ($env:LIB).Replace(";;", ";") }
@@ -601,9 +664,12 @@ Write-Host "HWLOC_ROOT: $env:HWLOC_ROOT" -ForegroundColor Gray
     -replace "VALUE_LIB_PATH", $hwlocLibDir `
     -replace "VALUE_BIN_PATH", $hwlocBinPath `
     -replace "VALUE_VERSION", $hwlocVersion `
+    -replace "VALUE_ABI_VERSION", $binaryversion `
+    -replace "VALUE_SO_VERSION", $binaryversion `
     -replace "VALUE_SHARED", $SharedLib `
     -replace "VALUE_BINARY", $BinaryLib `
     -replace "VALUE_STATIC", $StaticLib `
+    -replace "VALUE_LIB_NAME", $hwlocLibName `
     -replace "VALUE_CMAKE_PATH", $hwlocCMakePath
 
     $EnvContent | Out-File -FilePath $hwlocEnvScript -Encoding utf8

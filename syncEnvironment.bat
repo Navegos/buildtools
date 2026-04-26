@@ -1,6 +1,9 @@
-rem Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
+rem SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 rem SPDX-License-Identifier: Apache-2.0
-rem file:syncEnvironment.bat
+rem project: buildtools
+rem file: syncEnvironment.bat
+rem created: 2026-03-15
+rem lastModified: 2026-04-26
 
 @echo off
 setlocal enableextensions enabledelayedexpansion

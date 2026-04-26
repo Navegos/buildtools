@@ -1,6 +1,9 @@
-# Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:x64-windows/dep-ninja.ps1
+# project: buildtools
+# file: x64-windows/dep-ninja.ps1
+# created: 2026-03-02
+# lastModified: 2026-04-26
 
 param (
     [Parameter(HelpMessage = "Path for ninja storage", Mandatory = $false)]
@@ -289,20 +292,25 @@ if (Test-Path $ninjaExePath) {
     # Generate Environment Helper with Clean Paths
     $ninjaBinPath = $ninjaBinPath.TrimEnd('\')
     $ninjaInstallDir = $ninjaInstallDir.TrimEnd('\')
+    $ninjaExePath = Join-Path $ninjaInstallDir "ninja.exe"
+    if (-not (Test-Path $ninjaExePath)) { $ninjaExePath = Join-Path $ninjaBinPath "ninja.exe" }
 
     # Using a literal here-string with -replace to avoid accidental expansion of $env:PATH during creation
     $EnvContent = @'
 # NINJA Environment Setup
 $ninjaroot = "VALUE_ROOT_PATH"
 $ninjabin = "VALUE_BIN_PATH"
+$ninjaexe = "VALUE_EXE_PATH"
 $ninjaversion = "VALUE_VERSION"
 $env:NINJA_PATH = $ninjaroot
 $env:NINJA_ROOT = $ninjaroot
 $env:NINJA_BIN = $ninjabin
+$env:BINARY_NINJA = $ninjaexe
 if ($env:PATH -notlike "*$ninjabin*") { $env:PATH = $ninjabin + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") }
 Write-Host "Ninja Environment Loaded (Version: $ninjaversion) (Bin: $ninjabin)" -ForegroundColor Green
 Write-Host "NINJA_ROOT: $env:NINJA_ROOT" -ForegroundColor Gray
 '@  -replace "VALUE_BIN_PATH", $ninjaBinPath `
+    -replace "VALUE_EXE_PATH", $ninjaExePath `
     -replace "VALUE_ROOT_PATH", $ninjaInstallDir `
     -replace "VALUE_VERSION", $ninjaVersion
 

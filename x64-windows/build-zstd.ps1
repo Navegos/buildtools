@@ -1,6 +1,9 @@
-# Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:x64-windows/build-zstd.ps1
+# project: buildtools
+# file: x64-windows/build-zstd.ps1
+# created: 2026-02-28
+# lastModified: 2026-04-26
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -14,6 +17,9 @@ param (
 
     [Parameter(HelpMessage = "Path for zstd library storage", Mandatory = $false)]
     [string]$zstdInstallDir = "$env:LIBRARIES_PATH\zstd",
+    
+    [Parameter(HelpMessage = "Lib name, if it's building with a different name (fixit by changing it's default name beforehand)", Mandatory = $false)]
+    [string]$zstdLibName = "zstd",
     
     [Parameter(HelpMessage = "Force a full purge of the local zstd version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
@@ -45,10 +51,10 @@ if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
 }
 
 # --- 2. Initialize git environment if missing ---
-if (-not $env:GIT_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_GIT) -or -not (Test-Path $env:BINARY_GIT)) {
     $gitEnvScript = Join-Path $EnvironmentDir "env-git.ps1"
     if (Test-Path $gitEnvScript) { . $gitEnvScript } 
-    if (-not $env:GIT_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_GIT) -or -not (Test-Path $env:BINARY_GIT)) {
         $depgitEnvScript = Join-Path $PSScriptRoot "dep-git.ps1"
         if (Test-Path $depgitEnvScript) { . $depgitEnvScript }
         else {
@@ -59,10 +65,10 @@ if (-not $env:GIT_PATH) {
 }
 
 # --- 3. Initialize cmake environment if missing ---
-if (-not $env:CMAKE_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_CMAKE) -or -not (Test-Path $env:BINARY_CMAKE)) {
     $cmakeEnvScript = Join-Path $EnvironmentDir "env-cmake.ps1"
     if (Test-Path $cmakeEnvScript) { . $cmakeEnvScript } 
-    if (-not $env:CMAKE_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_CMAKE) -or -not (Test-Path $env:BINARY_CMAKE)) {
         $depcmakeEnvScript = Join-Path $PSScriptRoot "dep-cmake.ps1"
         if (Test-Path $depcmakeEnvScript) { . $depcmakeEnvScript }
         else {
@@ -73,10 +79,10 @@ if (-not $env:CMAKE_PATH) {
 }
 
 # --- 4. Initialize ninja environment if missing ---
-if (-not $env:NINJA_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_NINJA) -or -not (Test-Path $env:BINARY_NINJA)) {
     $ninjaEnvScript = Join-Path $EnvironmentDir "env-ninja.ps1"
     if (Test-Path $ninjaEnvScript) { . $ninjaEnvScript }
-    if (-not $env:NINJA_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_NINJA) -or -not (Test-Path $env:BINARY_NINJA)) {
         $depninjaEnvScript = Join-Path $PSScriptRoot "dep-ninja.ps1"
         if (Test-Path $depninjaEnvScript) { . $depninjaEnvScript }
         else {
@@ -87,10 +93,10 @@ if (-not $env:NINJA_PATH) {
 }
 
 # --- 5. Initialize clang environment if missing ---
-if (-not $env:LLVM_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_CLANG) -or -not (Test-Path $env:BINARY_CLANG)) {
     $llvmEnvScript = Join-Path $EnvironmentDir "env-llvm.ps1"
     if (Test-Path $llvmEnvScript) { . $llvmEnvScript }
-    if (-not $env:LLVM_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_CLANG) -or -not (Test-Path $env:BINARY_CLANG)) {
         $depllvmEnvScript = Join-Path $PSScriptRoot "dep-llvm.ps1"
         if (Test-Path $depllvmEnvScript) { . $depllvmEnvScript }
         else {
@@ -287,7 +293,50 @@ Write-Host "[REMOVED] ($TargetScope) all '*$zstdroot*' removed from EXTCOMPLIBS_
     Get-ChildItem Env:\BINARY_LIB_ZSTD* | Remove-Item -ErrorAction SilentlyContinue
     Get-ChildItem Env:\SHARED_LIB_ZSTD* | Remove-Item -ErrorAction SilentlyContinue
     Get-ChildItem Env:\STATIC_LIB_ZSTD* | Remove-Item -ErrorAction SilentlyContinue
-
+    Get-ChildItem Env:\ZSTD_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ZSTD_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ZSTD_MAJOR* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ZSTD_MINOR* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ZSTD_PATCH* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ZSTD_ABI_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ZSTD_SO_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    
+    $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
+    $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewCMakePrefixPath = ($CleanedCMakePrefixPathList -join ";").Replace(";;", ";")
+    $NewCMakePrefixPath = ($NewCMakePrefixPath + ";").Replace(";;", ";")
+    $env:CMAKE_PREFIX_PATH = $NewCMakePrefixPath
+    
+    $CurrentIncludePath = $env:INCLUDE
+    $CleanedIncludePathList = $CurrentIncludePath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewIncludePath = ($CleanedIncludePathList -join ";").Replace(";;", ";")
+    $NewIncludePath = ($NewIncludePath + ";").Replace(";;", ";")
+    $env:INCLUDE = $NewIncludePath
+    
+    $CurrentLibPath = $env:LIB
+    $CleanedLibPathList = $CurrentLibPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewLibPath = ($CleanedLibPathList -join ";").Replace(";;", ";")
+    $NewLibPath = ($NewLibPath + ";").Replace(";;", ";")
+    $env:LIB = $NewLibPath
+    
+    $CurrentPath = $env:PATH
+    $CleanedPathList = $CurrentPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewPath = ($CleanedPathList -join ";").Replace(";;", ";")
+    $NewPath = ($NewPath + ";").Replace(";;", ";")
+    $env:PATH = $NewPath
+    
     Write-Host "--- ZSTD Purge Complete ---" -ForegroundColor Green
 }
 
@@ -403,13 +452,13 @@ $zstdLibDir = Join-Path $zstdInstallDir "lib"
 $zstdBinPath = Join-Path $zstdInstallDir "bin"
 $zstdCMakePath = $zstdInstallDir.Replace('\', '/')
 
-$StaticLib = Join-Path $zstdLibDir "zstdstatic.lib"
-$SharedLib = Join-Path $zstdLibDir "zstd.lib"
-$BinaryLib = Join-Path $zstdBinPath "zstd.dll"
+$StaticLib = Join-Path $zstdLibDir ("$zstdLibName" + "static.lib")
+$SharedLib = Join-Path $zstdLibDir "$zstdLibName.lib"
+$BinaryLib = Join-Path $zstdBinPath "$zstdLibName.dll"
 $versionFile = Join-Path $zstdInstallDir "version.json"
 
 # Fallback check for "z.lib" / "zs.lib" naming convention
-if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $zstdLibDir "zstds.lib" }
+if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $zstdLibDir ("$zstdLibName" + "s.lib") }
 #if (-not (Test-Path $SharedLib)) { $SharedLib = Join-Path $zstdLibDir "zstd.lib" }
 #if (-not (Test-Path $BinaryLib)) { $BinaryLib = Join-Path $zstdBinPath "zstd.dll" }
 
@@ -418,6 +467,7 @@ if ((Test-Path $StaticLib) -or (Test-Path $SharedLib) -or (Test-Path $BinaryLib)
     if (-not (Test-Path $zstdHeader)) { $zstdHeader = Join-Path $Source "lib\zstd.h" }
     $localVersion = "0.0.0"
     $rawVersion = $Branch
+    $binaryversion = "0"
     
     if (Test-Path $zstdHeader) {
         # Extract version from #define #define ZSTD_VERSION_MAJOR  #define ZSTD_VERSION_MINOR #define ZSTD_VERSION_RELEASE
@@ -431,6 +481,7 @@ if ((Test-Path $StaticLib) -or (Test-Path $SharedLib) -or (Test-Path $BinaryLib)
         if ($major -and $minor -and $rel) {
             $localVersion = "$major.$minor.$rel"
             $rawVersion = $localVersion
+            $binaryversion = ([version]$localVersion).Major
             Write-Host "[VERSION] Detected zstd: $localVersion" -ForegroundColor Cyan
         }
     }
@@ -443,6 +494,8 @@ if ((Test-Path $StaticLib) -or (Test-Path $SharedLib) -or (Test-Path $BinaryLib)
         commit     = $tagCommit;
         version    = $localVersion;
         rawversion = $rawVersion;
+        abiversion = $binaryversion;
+        soversion  = $binaryversion;
         date       = (Get-Date).ToString("yyyy-MM-dd");
         updated_at = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ");
         type       = "source_build";
@@ -458,9 +511,12 @@ $zstdinclude = "VALUE_INCLUDE_PATH"
 $zstdlibrary = "VALUE_LIB_PATH"
 $zstdbin = "VALUE_BIN_PATH"
 $zstdversion = "VALUE_VERSION"
+$zstdabiversion = "VALUE_ABI_VERSION"
+$zstdsoversion = "VALUE_SO_VERSION"
 $zstdbinary = "VALUE_BINARY"
 $zstdshared = "VALUE_SHARED"
 $zstdstatic = "VALUE_STATIC"
+$zstdlibname = "VALUE_LIB_NAME"
 $zstdcmakepath = "VALUE_CMAKE_PATH"
 $env:ZSTD_PATH = $zstdroot
 $env:ZSTD_ROOT = $zstdroot
@@ -470,6 +526,13 @@ $env:ZSTD_LIBRARY_DIR = $zstdlibrary
 $env:BINARY_LIB_ZSTD = $zstdbinary
 $env:SHARED_LIB_ZSTD = $zstdshared
 $env:STATIC_LIB_ZSTD = $zstdstatic
+$env:ZSTD_LIB_NAME = $zstdlibname
+$env:ZSTD_VERSION = $zstdversion
+$env:ZSTD_MAJOR = ([version]$zstdversion).Major
+$env:ZSTD_MINOR = ([version]$zstdversion).Minor
+$env:ZSTD_PATCH = ([version]$zstdversion).Patch
+$env:ZSTD_ABI_VERSION = $zstdabiversion
+$env:ZSTD_SO_VERSION = $zstdsoversion
 if ($env:CMAKE_PREFIX_PATH -notlike "*$zstdcmakepath*") { $env:CMAKE_PREFIX_PATH = $zstdcmakepath + ";" + $env:CMAKE_PREFIX_PATH; $env:CMAKE_PREFIX_PATH = ($env:CMAKE_PREFIX_PATH).Replace(";;", ";") }
 if ($env:INCLUDE -notlike "*$zstdinclude*") { $env:INCLUDE = $zstdinclude + ";" + $env:INCLUDE; $env:INCLUDE = ($env:INCLUDE).Replace(";;", ";") }
 if ($env:LIB -notlike "*$zstdlibrary*") { $env:LIB = $zstdlibrary + ";" + $env:LIB; $env:LIB = ($env:LIB).Replace(";;", ";") }
@@ -481,9 +544,12 @@ Write-Host "ZSTD_ROOT: $env:ZSTD_ROOT" -ForegroundColor Gray
     -replace "VALUE_LIB_PATH", $zstdLibDir `
     -replace "VALUE_BIN_PATH", $zstdBinPath `
     -replace "VALUE_VERSION", $zstdVersion `
+    -replace "VALUE_ABI_VERSION", $binaryversion `
+    -replace "VALUE_SO_VERSION", $binaryversion `
     -replace "VALUE_SHARED", $SharedLib `
     -replace "VALUE_BINARY", $BinaryLib `
     -replace "VALUE_STATIC", $StaticLib `
+    -replace "VALUE_LIB_NAME", $zstdLibName `
     -replace "VALUE_CMAKE_PATH", $zstdCMakePath
 
     $EnvContent | Out-File -FilePath $zstdEnvScript -Encoding utf8

@@ -1,6 +1,9 @@
-# Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:x64-windows/dep-icu.ps1
+# project: buildtools
+# file: x64-windows/dep-icu.ps1
+# created: 2026-03-10
+# lastModified: 2026-04-26
 
 param (
     [Parameter(HelpMessage = "Target vcpkg ICU triplet")]
@@ -33,10 +36,10 @@ if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
 }
 
 # --- 2. Initialize vcpkg environment if missing ---
-if (-not $env:VCPKG_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_VCPKG) -or -not (Test-Path $env:BINARY_VCPKG)) {
     $vcpkgEnvScript = Join-Path $EnvironmentDir "env-vcpkg.ps1"
     if (Test-Path $vcpkgEnvScript) { . $vcpkgEnvScript }
-    if (-not $env:VCPKG_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_VCPKG) -or -not (Test-Path $env:BINARY_VCPKG)) {
         $depvcpkgEnvScript = Join-Path $PSScriptRoot "dep-vcpkg.ps1"
         if (Test-Path $depvcpkgEnvScript) { . $depvcpkgEnvScript }
         else {
@@ -237,14 +240,71 @@ Write-Host "[REMOVED] ($TargetScope) all '*$icutoolsbinpath*' removed from EXTCO
     Get-ChildItem Env:\ICU_TOOLS_BIN* | Remove-Item -ErrorAction SilentlyContinue
     Get-ChildItem Env:\ICU_INCLUDE_DIR* | Remove-Item -ErrorAction SilentlyContinue
     Get-ChildItem Env:\ICU_LIBRARY_DIR* | Remove-Item -ErrorAction SilentlyContinue
-
+    Get-ChildItem Env:\BINARY_LIB_ICUUC* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\SHARED_LIB_ICUUC* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\BINARY_LIB_ICUTU* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\SHARED_LIB_ICUTU* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\BINARY_LIB_ICUIO* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\SHARED_LIB_ICUIO* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\BINARY_LIB_ICUIN* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\SHARED_LIB_ICUIN* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\BINARY_LIB_ICUDT* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\SHARED_LIB_ICUDT* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ICU_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ICU_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ICU_MAJOR* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ICU_MINOR* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ICU_PATCH* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ICU_ABI_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ICU_SO_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    
+    $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
+    $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewCMakePrefixPath = ($CleanedCMakePrefixPathList -join ";").Replace(";;", ";")
+    $NewCMakePrefixPath = ($NewCMakePrefixPath + ";").Replace(";;", ";")
+    $env:CMAKE_PREFIX_PATH = $NewCMakePrefixPath
+    
+    $CurrentIncludePath = $env:INCLUDE
+    $CleanedIncludePathList = $CurrentIncludePath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewIncludePath = ($CleanedIncludePathList -join ";").Replace(";;", ";")
+    $NewIncludePath = ($NewIncludePath + ";").Replace(";;", ";")
+    $env:INCLUDE = $NewIncludePath
+    
+    $CurrentLibPath = $env:LIB
+    $CleanedLibPathList = $CurrentLibPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewLibPath = ($CleanedLibPathList -join ";").Replace(";;", ";")
+    $NewLibPath = ($NewLibPath + ";").Replace(";;", ";")
+    $env:LIB = $NewLibPath
+    
+    $CurrentPath = $env:PATH
+    $CleanedPathList = $CurrentPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewPath = ($CleanedPathList -join ";").Replace(";;", ";")
+    $NewPath = ($NewPath + ";").Replace(";;", ";")
+    $env:PATH = $NewPath
+    
     Write-Host "--- ICU Purge Complete ---" -ForegroundColor Green
 }
+
+$icuLibName = "icu"
 
 # Fix this using vcpkg to get ICU version
 $localVersion = "0.0.0"
 $rawVersion = "0.0.0"
-if (Test-Path (Join-Path $icuLibDir "icuuc.lib")) {
+$binaryversion = "0"
+
+if (Test-Path (Join-Path $icuLibDir ("$icuLibName" + "uc.lib"))) {
     $rawVersion = (vcpkg list icu:$Triplet | Select-Object -First 1).Trim()
     if ($rawVersion -match '^(\d+\.\d+(\.\d+)?)') { $localVersion = $Matches[1] }
 }
@@ -273,6 +333,7 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
 
     # 1. Locate the bin folder and the root folder
     $icuVersion = $localVersion
+    $binaryversion = ([version]$localVersion).Major
     if (-not (Test-Path $versionFile)) {
         $versionInfo = @{
             url        = $url;
@@ -280,6 +341,8 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
             commit     = $tagCommit;
             version    = $localVersion;
             rawversion = $rawVersion;
+            abiversion = $binaryversion;
+            soversion  = $binaryversion;
             date       = (Get-Date).ToString("yyyy-MM-dd");
             updated_at = $updated_at;
             type       = "build_tool";
@@ -299,7 +362,8 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
     Pop-Location
 
     $icuVersion = $remoteVersion
-    if (Test-Path (Join-Path $icuLibDir "icuuc.lib")) {
+    $binaryversion = ([version]$remoteVersion).Major
+    if (Test-Path (Join-Path $icuLibDir ("$icuLibName" + "uc.lib"))) {
         $rawVersion = (vcpkg list icu:$Triplet | Select-Object -First 1).Trim()
     }
     $versionInfo = @{
@@ -308,6 +372,8 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
         commit     = $tagCommit;
         version    = $remoteVersion;
         rawversion = $rawVersion;
+        abiversion = $binaryversion;
+        soversion  = $binaryversion;
         date       = (Get-Date).ToString("yyyy-MM-dd");
         updated_at = $updated_at;
         type       = "build_tool";
@@ -317,7 +383,7 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
 
 # Finalize Environment Helper
 # ICU typically produces icuuc.lib (Common), icuin.lib (I18N), etc.
-if (Test-Path (Join-Path $icuLibDir "icuuc.lib")) {
+if (Test-Path (Join-Path $icuLibDir ("$icuLibName" + "uc.lib"))) {
     # Generate Environment Helper with Clean Paths
     $icuInstallDir = $icuInstallDir.TrimEnd('\')
     $icuIncludeDir = $icuIncludeDir.TrimEnd('\')
@@ -326,6 +392,27 @@ if (Test-Path (Join-Path $icuLibDir "icuuc.lib")) {
     $icuToolsBinPath = $icuToolsBinPath.TrimEnd('\')
     $icuCMakePath  = $icuInstallDir.Replace('\', '/')
     
+    $libName = ("$icuLibName" + "uc")
+    $abiVersion = "0"
+
+    # Find the DLL and extract the number between '-' and '.dll'
+    $dll = Get-ChildItem -Path $icuBinPath -Filter "$libName*.dll" | Select-Object -First 1
+    if ($dll.Name -match "(\d+)\.dll$") {
+        $abiVersion = $matches[1]
+        Write-Host "Detected ICU ABI Version: $abiVersion" -ForegroundColor Cyan
+    }
+
+    $SharedICUUCLib = Join-Path $icuLibDir ("$icuLibName" + "uc.lib")
+    $BinaryICUUCLib = Join-Path $icuBinPath ("$icuLibName" + "uc-$abiVersion.dll")
+    $SharedICUTULib = Join-Path $icuLibDir ("$icuLibName" + "tu.lib")
+    $BinaryICUTULib = Join-Path $icuBinPath ("$icuLibName" + "tu$abiVersion.dll")
+    $SharedICUIOLib = Join-Path $icuLibDir ("$icuLibName" + "io.lib")
+    $BinaryICUIOLib = Join-Path $icuBinPath ("$icuLibName" + "io$abiVersion.dll")
+    $SharedICUINLib = Join-Path $icuLibDir ("$icuLibName" + "in.lib")
+    $BinaryICUINLib = Join-Path $icuBinPath ("$icuLibName" + "in$abiVersion.dll")
+    $SharedICUDTLib = Join-Path $icuLibDir ("$icuLibName" + "dt.lib")
+    $BinaryICUDTLib = Join-Path $icuBinPath ("$icuLibName" + "dt$abiVersion.dll")
+
     # --- 3. Create Environment Helper ---
     Write-Host "Generating environment helper script..." -ForegroundColor Cyan
 
@@ -337,14 +424,44 @@ $icuinclude = "VALUE_INCLUDE_PATH"
 $iculibrary = "VALUE_LIB_PATH"
 $icubin = "VALUE_BIN_PATH"
 $icutoolsbin = "VALUE_TOOLS_BIN_PATH"
-$icucmakepath = "VALUE_CMAKE_PATH"
 $icuversion = "VALUE_VERSION"
+$icuabiversion = "VALUE_ABI_VERSION"
+$icusoversion = "VALUE_SO_VERSION"
+$icuucbinary = "VALUE_ICUUC_BINARY"
+$icuucshared = "VALUE_ICUUC_SHARED"
+$icutubinary = "VALUE_ICUTU_BINARY"
+$icutushared = "VALUE_ICUTU_SHARED"
+$icuiobinary = "VALUE_ICUIO_BINARY"
+$icuioshared = "VALUE_ICUIO_SHARED"
+$icuinbinary = "VALUE_ICUIN_BINARY"
+$icuinshared = "VALUE_ICUIN_SHARED"
+$icudtbinary = "VALUE_ICUDT_BINARY"
+$icudtshared = "VALUE_ICUDT_SHARED"
+$iculibname = "VALUE_LIB_NAME"
+$icucmakepath = "VALUE_CMAKE_PATH"
 $env:ICU_PATH = $icuroot
 $env:ICU_ROOT = $icuroot
 $env:ICU_BIN = $icubin
 $env:ICU_TOOLS_BIN = $icutoolsbin
 $env:ICU_INCLUDE_DIR = $icuinclude
 $env:ICU_LIBRARY_DIR = $iculibrary
+$env:BINARY_LIB_ICUUC = $icuucbinary
+$env:SHARED_LIB_ICUUC = $icuucshared
+$env:BINARY_LIB_ICUTU = $icutubinary
+$env:SHARED_LIB_ICUTU = $icutushared
+$env:BINARY_LIB_ICUIO = $icuiobinary
+$env:SHARED_LIB_ICUIO = $icuioshared
+$env:BINARY_LIB_ICUIN = $icuinbinary
+$env:SHARED_LIB_ICUIN = $icuinshared
+$env:BINARY_LIB_ICUDT = $icudtbinary
+$env:SHARED_LIB_ICUDT = $icudtshared
+$env:ICU_LIB_NAME = $iculibname
+$env:ICU_VERSION = $icuversion
+$env:ICU_MAJOR = ([version]$icuversion).Major
+$env:ICU_MINOR = ([version]$icuversion).Minor
+$env:ICU_PATCH = ([version]$icuversion).Patch
+$env:ICU_ABI_VERSION = $icuabiversion
+$env:ICU_SO_VERSION = $icusoversion
 if ($env:CMAKE_PREFIX_PATH -notlike "*$icucmakepath*") { $env:CMAKE_PREFIX_PATH = $icucmakepath + ";" + $env:CMAKE_PREFIX_PATH; $env:CMAKE_PREFIX_PATH = ($env:CMAKE_PREFIX_PATH).Replace(";;", ";") }
 if ($env:INCLUDE -notlike "*$icuinclude*") { $env:INCLUDE = $icuinclude + ";" + $env:INCLUDE; $env:INCLUDE = ($env:INCLUDE).Replace(";;", ";") }
 if ($env:LIB -notlike "*$iculibrary*") { $env:LIB = $iculibrary + ";" + $env:LIB; $env:LIB = ($env:LIB).Replace(";;", ";") }
@@ -356,8 +473,21 @@ Write-Host "ICU_ROOT: $env:ICU_ROOT" -ForegroundColor Gray
     -replace "VALUE_LIB_PATH", $icuLibDir `
     -replace "VALUE_BIN_PATH", $icuBinPath `
     -replace "VALUE_TOOLS_BIN_PATH", $icuToolsBinPath `
-    -replace "VALUE_CMAKE_PATH", $icuCMakePath `
-    -replace "VALUE_VERSION", $icuVersion
+    -replace "VALUE_VERSION", $icuVersion `
+    -replace "VALUE_ABI_VERSION", $binaryversion `
+    -replace "VALUE_SO_VERSION", $binaryversion `
+    -replace "VALUE_ICUUC_SHARED", $SharedICUUCLib `
+    -replace "VALUE_ICUUC_BINARY", $BinaryICUUCLib `
+    -replace "VALUE_ICUTU_SHARED", $SharedICUTULib `
+    -replace "VALUE_ICUTU_BINARY", $BinaryICUTULib `
+    -replace "VALUE_ICUIO_SHARED", $SharedICUIOLib `
+    -replace "VALUE_ICUIO_BINARY", $BinaryICUIOLib `
+    -replace "VALUE_ICUIN_SHARED", $SharedICUINLib `
+    -replace "VALUE_ICUIN_BINARY", $BinaryICUINLib `
+    -replace "VALUE_ICUDT_SHARED", $SharedICUDTLib `
+    -replace "VALUE_ICUDT_BINARY", $BinaryICUDTLib `
+    -replace "VALUE_LIB_NAME", $icuLibName `
+    -replace "VALUE_CMAKE_PATH", $icuCMakePath
 
     $EnvContent | Out-File -FilePath $icuEnvScript -Encoding utf8
     Write-Host "Created: $icuEnvScript" -ForegroundColor Gray

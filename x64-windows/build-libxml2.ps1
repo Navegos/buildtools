@@ -1,6 +1,9 @@
-# Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:x64-windows/build-libxml2.ps1
+# project: buildtools
+# file: x64-windows/build-libxml2.ps1
+# created: 2026-03-10
+# lastModified: 2026-04-26
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -14,6 +17,9 @@ param (
 
     [Parameter(HelpMessage = "Path for libxml2 library storage", Mandatory = $false)]
     [string]$libxml2InstallDir = "$env:LIBRARIES_PATH\libxml2",
+    
+    [Parameter(HelpMessage = "Lib name, if it's building with a different name (fixit by changing it's default name beforehand)", Mandatory = $false)]
+    [string]$libxml2LibName = "libxml2",
     
     [Parameter(HelpMessage = "Force a full purge of the local libxml2 version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
@@ -45,10 +51,10 @@ if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
 }
 
 # --- 2. Initialize git environment if missing ---
-if (-not $env:GIT_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_GIT) -or -not (Test-Path $env:BINARY_GIT)) {
     $gitEnvScript = Join-Path $EnvironmentDir "env-git.ps1"
     if (Test-Path $gitEnvScript) { . $gitEnvScript } 
-    if (-not $env:GIT_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_GIT) -or -not (Test-Path $env:BINARY_GIT)) {
         $depgitEnvScript = Join-Path $PSScriptRoot "dep-git.ps1"
         if (Test-Path $depgitEnvScript) { . $depgitEnvScript }
         else {
@@ -59,10 +65,10 @@ if (-not $env:GIT_PATH) {
 }
 
 # --- 3. Initialize cmake environment if missing ---
-if (-not $env:CMAKE_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_CMAKE) -or -not (Test-Path $env:BINARY_CMAKE)) {
     $cmakeEnvScript = Join-Path $EnvironmentDir "env-cmake.ps1"
     if (Test-Path $cmakeEnvScript) { . $cmakeEnvScript } 
-    if (-not $env:CMAKE_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_CMAKE) -or -not (Test-Path $env:BINARY_CMAKE)) {
         $depcmakeEnvScript = Join-Path $PSScriptRoot "dep-cmake.ps1"
         if (Test-Path $depcmakeEnvScript) { . $depcmakeEnvScript }
         else {
@@ -73,10 +79,10 @@ if (-not $env:CMAKE_PATH) {
 }
 
 # --- 4. Initialize ninja environment if missing ---
-if (-not $env:NINJA_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_NINJA) -or -not (Test-Path $env:BINARY_NINJA)) {
     $ninjaEnvScript = Join-Path $EnvironmentDir "env-ninja.ps1"
     if (Test-Path $ninjaEnvScript) { . $ninjaEnvScript }
-    if (-not $env:NINJA_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_NINJA) -or -not (Test-Path $env:BINARY_NINJA)) {
         $depninjaEnvScript = Join-Path $PSScriptRoot "dep-ninja.ps1"
         if (Test-Path $depninjaEnvScript) { . $depninjaEnvScript }
         else {
@@ -87,10 +93,10 @@ if (-not $env:NINJA_PATH) {
 }
 
 # --- 5. Initialize clang environment if missing ---
-if (-not $env:LLVM_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_CLANG) -or -not (Test-Path $env:BINARY_CLANG)) {
     $llvmEnvScript = Join-Path $EnvironmentDir "env-llvm.ps1"
     if (Test-Path $llvmEnvScript) { . $llvmEnvScript }
-    if (-not $env:LLVM_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_CLANG) -or -not (Test-Path $env:BINARY_CLANG)) {
         $depllvmEnvScript = Join-Path $PSScriptRoot "dep-llvm.ps1"
         if (Test-Path $depllvmEnvScript) { . $depllvmEnvScript }
         else {
@@ -138,10 +144,10 @@ if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_ZLIB) -or -not (Test-Path $env:
 }
 
 # Load libiconv requirement
-if ([string]::IsNullOrWhiteSpace($env:LIBICONV_LIBRARY_DIR) -or -not (Test-Path (Join-Path $env:LIBICONV_LIBRARY_DIR "iconv.lib"))) {
+if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_ICONV) -or -not (Test-Path $env:SHARED_LIB_ICONV)) {
     $libiconvEnvScript = Join-Path $EnvironmentDir "env-libiconv.ps1"
     if (Test-Path $libiconvEnvScript) { . $libiconvEnvScript }
-    if ([string]::IsNullOrWhiteSpace($env:LIBICONV_LIBRARY_DIR) -or -not (Test-Path (Join-Path $env:LIBICONV_LIBRARY_DIR "iconv.lib"))) {
+    if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_ICONV) -or -not (Test-Path $env:SHARED_LIB_ICONV)) {
         $deplibiconvEnvScript = Join-Path $PSScriptRoot "dep-libiconv.ps1"
         if (Test-Path $deplibiconvEnvScript) { . $deplibiconvEnvScript }
         else {
@@ -152,10 +158,10 @@ if ([string]::IsNullOrWhiteSpace($env:LIBICONV_LIBRARY_DIR) -or -not (Test-Path 
 }
 
 # Load icu requirement
-if ([string]::IsNullOrWhiteSpace($env:ICU_LIBRARY_DIR) -or -not (Test-Path (Join-Path $env:ICU_LIBRARY_DIR "icuuc.lib"))) {
+if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_ICUUC) -or -not (Test-Path $env:SHARED_LIB_ICUUC)) {
     $icuEnvScript = Join-Path $EnvironmentDir "env-icu.ps1"
     if (Test-Path $icuEnvScript) { . $icuEnvScript }
-    if ([string]::IsNullOrWhiteSpace($env:ICU_LIBRARY_DIR) -or -not (Test-Path (Join-Path $env:ICU_LIBRARY_DIR "icuuc.lib"))) {
+    if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_ICUUC) -or -not (Test-Path $env:SHARED_LIB_ICUUC)) {
         $depicuEnvScript = Join-Path $PSScriptRoot "dep-icu.ps1"
         if (Test-Path $depicuEnvScript) { . $depicuEnvScript }
         else {
@@ -166,10 +172,10 @@ if ([string]::IsNullOrWhiteSpace($env:ICU_LIBRARY_DIR) -or -not (Test-Path (Join
 }
 
 # Load python requirement
-if (-not $env:PYTHON_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_PYTHON) -or -not (Test-Path $env:BINARY_PYTHON)) {
     $pythonEnvScript = Join-Path $EnvironmentDir "env-python.ps1"
     if (Test-Path $pythonEnvScript) { . $pythonEnvScript }
-    if (-not $env:PYTHON_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_PYTHON) -or -not (Test-Path $env:BINARY_PYTHON)) {
         $deppythonEnvScript = Join-Path $PSScriptRoot "dep-python.ps1"
         if (Test-Path $deppythonEnvScript) { . $deppythonEnvScript }
         else {
@@ -311,10 +317,53 @@ Write-Host "[REMOVED] ($TargetScope) all '*$libxml2root*' removed from EXTCOMPLI
     Get-ChildItem Env:\LIBXML2_BIN* | Remove-Item -ErrorAction SilentlyContinue
     Get-ChildItem Env:\LIBXML2_INCLUDE_DIR* | Remove-Item -ErrorAction SilentlyContinue
     Get-ChildItem Env:\LIBXML2_LIBRARY_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BINARY_LIB_LIBXML2* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\SHARED_LIB_LIBXML2* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\STATIC_LIB_LIBXML2* | Remove-Item -ErrorAction SilentlyContinue
-
+    Get-ChildItem Env:\BINARY_LIB_XML2* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\SHARED_LIB_XML2* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\STATIC_LIB_XML2* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LIBXML2_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LIBXML2_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LIBXML2_MAJOR* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LIBXML2_MINOR* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LIBXML2_PATCH* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LIBXML2_ABI_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LIBXML2_SO_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    
+    $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
+    $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewCMakePrefixPath = ($CleanedCMakePrefixPathList -join ";").Replace(";;", ";")
+    $NewCMakePrefixPath = ($NewCMakePrefixPath + ";").Replace(";;", ";")
+    $env:CMAKE_PREFIX_PATH = $NewCMakePrefixPath
+    
+    $CurrentIncludePath = $env:INCLUDE
+    $CleanedIncludePathList = $CurrentIncludePath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewIncludePath = ($CleanedIncludePathList -join ";").Replace(";;", ";")
+    $NewIncludePath = ($NewIncludePath + ";").Replace(";;", ";")
+    $env:INCLUDE = $NewIncludePath
+    
+    $CurrentLibPath = $env:LIB
+    $CleanedLibPathList = $CurrentLibPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewLibPath = ($CleanedLibPathList -join ";").Replace(";;", ";")
+    $NewLibPath = ($NewLibPath + ";").Replace(";;", ";")
+    $env:LIB = $NewLibPath
+    
+    $CurrentPath = $env:PATH
+    $CleanedPathList = $CurrentPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewPath = ($CleanedPathList -join ";").Replace(";;", ";")
+    $NewPath = ($NewPath + ";").Replace(";;", ";")
+    $env:PATH = $NewPath
+    
     Write-Host "--- LIBXML2 Purge Complete ---" -ForegroundColor Green
 }
 
@@ -440,6 +489,7 @@ cmake $CommonCmakeArgs `
     -DLIBXML2_WITH_HISTORY=OFF `
     -DCMAKE_C_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
     -DCMAKE_CXX_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
+    -DCMAKE_EXE_LINKER_FLAGS="-Wl,/ignore:importeddllmain" `
     --no-warn-unused-cli
     
 if ($LASTEXITCODE -ne 0) { Write-Error "libxml2 CMake Shared (DLL) configuration failed."; Pop-Location; return }
@@ -479,13 +529,13 @@ $libxml2LibDir = Join-Path $libxml2InstallDir "lib"
 $libxml2BinPath = Join-Path $libxml2InstallDir "bin"
 $libxml2CMakePath = $libxml2InstallDir.Replace('\', '/')
 
-$StaticLib = Join-Path $libxml2LibDir "libxml2static.lib"
-$SharedLib = Join-Path $libxml2LibDir "libxml2.lib"
-$BinaryLib = Join-Path $libxml2BinPath "libxml2.dll"
+$StaticLib = Join-Path $libxml2LibDir ("$libxml2LibName" + "static.lib")
+$SharedLib = Join-Path $libxml2LibDir "$libxml2LibName.lib"
+$BinaryLib = Join-Path $libxml2BinPath "$libxml2LibName.dll"
 $versionFile = Join-Path $libxml2InstallDir "version.json"
 
 # Fallback check for "z.lib" / "zs.lib" naming convention
-if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $libxml2LibDir "libxml2s.lib" }
+if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $libxml2LibDir ("$libxml2LibName" + "s.lib") }
 #if (-not (Test-Path $SharedLib)) { $SharedLib = Join-Path $libxml2LibDir "libxml2.lib" }
 #if (-not (Test-Path $BinaryLib)) { $BinaryLib = Join-Path $libxml2BinPath "libxml2.dll" }
 
@@ -508,6 +558,7 @@ foreach ($libxml2tool in $libxml2tools) {
 if ((Test-Path $StaticLib) -or (Test-Path $SharedLib) -or (Test-Path $BinaryLib)) {
     $localVersion = "0.0.0"
     $rawVersion = $Branch
+    $binaryversion = "0"
 
     if (Test-Path $libxml2Header) {
         # Extract version from #define LIBXML_DOTTED_VERSION "2.16.0"
@@ -519,6 +570,7 @@ if ((Test-Path $StaticLib) -or (Test-Path $SharedLib) -or (Test-Path $BinaryLib)
         if ($versionMatch) {
             $localVersion = $versionMatch
             $rawVersion = $localVersion
+            $binaryversion = ([version]$localVersion).Major
             Write-Host "[VERSION] Detected libxml2: $localVersion" -ForegroundColor Cyan
         }
     }
@@ -531,6 +583,8 @@ if ((Test-Path $StaticLib) -or (Test-Path $SharedLib) -or (Test-Path $BinaryLib)
         commit     = $tagCommit;
         version    = $localVersion;
         rawversion = $rawVersion;
+        abiversion = $binaryversion;
+        soversion  = $binaryversion;
         date       = (Get-Date).ToString("yyyy-MM-dd");
         updated_at = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ");
         type       = "source_build";
@@ -575,18 +629,28 @@ $libxml2include = "VALUE_INCLUDE_PATH"
 $libxml2library = "VALUE_LIB_PATH"
 $libxml2bin = "VALUE_BIN_PATH"
 $libxml2version = "VALUE_VERSION"
+$libxml2abiversion = "VALUE_ABI_VERSION"
+$libxml2soversion = "VALUE_SO_VERSION"
 $libxml2binary = "VALUE_BINARY"
 $libxml2shared = "VALUE_SHARED"
 $libxml2static = "VALUE_STATIC"
+$libxml2libname = "VALUE_LIB_NAME"
 $libxml2cmakepath = "VALUE_CMAKE_PATH"
 $env:LIBXML2_PATH = $libxml2root
 $env:LIBXML2_ROOT = $libxml2root
 $env:LIBXML2_BIN = $libxml2bin
 $env:LIBXML2_INCLUDE_DIR = $libxml2include
 $env:LIBXML2_LIBRARY_DIR = $libxml2library
-$env:BINARY_LIB_LIBXML2 = $libxml2binary
-$env:SHARED_LIB_LIBXML2 = $libxml2shared
-$env:STATIC_LIB_LIBXML2 = $libxml2static
+$env:BINARY_LIB_XML2 = $libxml2binary
+$env:SHARED_LIB_XML2 = $libxml2shared
+$env:STATIC_LIB_XML2 = $libxml2static
+$env:LIBXML2_LIB_NAME = $libxml2libname
+$env:LIBXML2_VERSION = $libxml2version
+$env:LIBXML2_MAJOR = ([version]$libxml2version).Major
+$env:LIBXML2_MINOR = ([version]$libxml2version).Minor
+$env:LIBXML2_PATCH = ([version]$libxml2version).Patch
+$env:LIBXML2_ABI_VERSION = $libxml2abiversion
+$env:LIBXML2_SO_VERSION = $libxml2soversion
 if ($env:CMAKE_PREFIX_PATH -notlike "*$libxml2cmakepath*") { $env:CMAKE_PREFIX_PATH = $libxml2cmakepath + ";" + $env:CMAKE_PREFIX_PATH; $env:CMAKE_PREFIX_PATH = ($env:CMAKE_PREFIX_PATH).Replace(";;", ";") }
 if ($env:INCLUDE -notlike "*$libxml2include*") { $env:INCLUDE = $libxml2include + ";" + $env:INCLUDE; $env:INCLUDE = ($env:INCLUDE).Replace(";;", ";") }
 if ($env:LIB -notlike "*$libxml2library*") { $env:LIB = $libxml2library + ";" + $env:LIB; $env:LIB = ($env:LIB).Replace(";;", ";") }
@@ -598,9 +662,12 @@ Write-Host "LIBXML2_ROOT: $env:LIBXML2_ROOT" -ForegroundColor Gray
     -replace "VALUE_LIB_PATH", $libxml2LibDir `
     -replace "VALUE_BIN_PATH", $libxml2BinPath `
     -replace "VALUE_VERSION", $libxml2Version `
+    -replace "VALUE_ABI_VERSION", $binaryversion `
+    -replace "VALUE_SO_VERSION", $binaryversion `
     -replace "VALUE_SHARED", $SharedLib `
     -replace "VALUE_BINARY", $BinaryLib `
     -replace "VALUE_STATIC", $StaticLib `
+    -replace "VALUE_LIB_NAME", $libxml2LibName `
     -replace "VALUE_CMAKE_PATH", $libxml2CMakePath
 
     $EnvContent | Out-File -FilePath $libxml2EnvScript -Encoding utf8

@@ -1,6 +1,9 @@
-# Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:dep-python.ps1
+# project: buildtools
+# file: dep-python.ps1
+# created: 2026-03-29
+# lastModified: 2026-04-26
 
 param (
     [Parameter(HelpMessage = "Path for Python storage", Mandatory = $false)]

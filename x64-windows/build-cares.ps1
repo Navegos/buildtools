@@ -1,6 +1,9 @@
-# Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:x64-windows/build-cares.ps1
+# project: buildtools
+# file: x64-windows/build-cares.ps1
+# created: 2026-03-06
+# lastModified: 2026-04-26
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -14,6 +17,9 @@ param (
 
     [Parameter(HelpMessage = "Path for c-ares library storage", Mandatory = $false)]
     [string]$caresInstallDir = "$env:LIBRARIES_PATH\cares",
+    
+    [Parameter(HelpMessage = "Lib name, if it's building with a different name (fixit by changing it's default name beforehand)", Mandatory = $false)]
+    [string]$caresLibName = "cares",
     
     [Parameter(HelpMessage = "Force a full purge of the local c-ares version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
@@ -45,10 +51,10 @@ if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
 }
 
 # --- 2. Initialize git environment if missing ---
-if (-not $env:GIT_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_GIT) -or -not (Test-Path $env:BINARY_GIT)) {
     $gitEnvScript = Join-Path $EnvironmentDir "env-git.ps1"
     if (Test-Path $gitEnvScript) { . $gitEnvScript } 
-    if (-not $env:GIT_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_GIT) -or -not (Test-Path $env:BINARY_GIT)) {
         $depgitEnvScript = Join-Path $PSScriptRoot "dep-git.ps1"
         if (Test-Path $depgitEnvScript) { . $depgitEnvScript }
         else {
@@ -59,10 +65,10 @@ if (-not $env:GIT_PATH) {
 }
 
 # --- 3. Initialize cmake environment if missing ---
-if (-not $env:CMAKE_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_CMAKE) -or -not (Test-Path $env:BINARY_CMAKE)) {
     $cmakeEnvScript = Join-Path $EnvironmentDir "env-cmake.ps1"
     if (Test-Path $cmakeEnvScript) { . $cmakeEnvScript } 
-    if (-not $env:CMAKE_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_CMAKE) -or -not (Test-Path $env:BINARY_CMAKE)) {
         $depcmakeEnvScript = Join-Path $PSScriptRoot "dep-cmake.ps1"
         if (Test-Path $depcmakeEnvScript) { . $depcmakeEnvScript }
         else {
@@ -73,10 +79,10 @@ if (-not $env:CMAKE_PATH) {
 }
 
 # --- 4. Initialize ninja environment if missing ---
-if (-not $env:NINJA_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_NINJA) -or -not (Test-Path $env:BINARY_NINJA)) {
     $ninjaEnvScript = Join-Path $EnvironmentDir "env-ninja.ps1"
     if (Test-Path $ninjaEnvScript) { . $ninjaEnvScript }
-    if (-not $env:NINJA_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_NINJA) -or -not (Test-Path $env:BINARY_NINJA)) {
         $depninjaEnvScript = Join-Path $PSScriptRoot "dep-ninja.ps1"
         if (Test-Path $depninjaEnvScript) { . $depninjaEnvScript }
         else {
@@ -87,10 +93,10 @@ if (-not $env:NINJA_PATH) {
 }
 
 # --- 5. Initialize clang environment if missing ---
-if (-not $env:LLVM_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_CLANG) -or -not (Test-Path $env:BINARY_CLANG)) {
     $llvmEnvScript = Join-Path $EnvironmentDir "env-llvm.ps1"
     if (Test-Path $llvmEnvScript) { . $llvmEnvScript }
-    if (-not $env:LLVM_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_CLANG) -or -not (Test-Path $env:BINARY_CLANG)) {
         $depllvmEnvScript = Join-Path $PSScriptRoot "dep-llvm.ps1"
         if (Test-Path $depllvmEnvScript) { . $depllvmEnvScript }
         else {
@@ -234,7 +240,50 @@ Write-Host "[REMOVED] ($TargetScope) all '*$caresroot*' removed from EXTCOMPLIBS
     Get-ChildItem Env:\BINARY_LIB_CARES* | Remove-Item -ErrorAction SilentlyContinue
     Get-ChildItem Env:\SHARED_LIB_CARES* | Remove-Item -ErrorAction SilentlyContinue
     Get-ChildItem Env:\STATIC_LIB_CARES* | Remove-Item -ErrorAction SilentlyContinue
-
+    Get-ChildItem Env:\CARES_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CARES_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CARES_MAJOR* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CARES_MINOR* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CARES_PATCH* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CARES_ABI_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CARES_SO_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    
+    $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
+    $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewCMakePrefixPath = ($CleanedCMakePrefixPathList -join ";").Replace(";;", ";")
+    $NewCMakePrefixPath = ($NewCMakePrefixPath + ";").Replace(";;", ";")
+    $env:CMAKE_PREFIX_PATH = $NewCMakePrefixPath
+    
+    $CurrentIncludePath = $env:INCLUDE
+    $CleanedIncludePathList = $CurrentIncludePath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewIncludePath = ($CleanedIncludePathList -join ";").Replace(";;", ";")
+    $NewIncludePath = ($NewIncludePath + ";").Replace(";;", ";")
+    $env:INCLUDE = $NewIncludePath
+    
+    $CurrentLibPath = $env:LIB
+    $CleanedLibPathList = $CurrentLibPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewLibPath = ($CleanedLibPathList -join ";").Replace(";;", ";")
+    $NewLibPath = ($NewLibPath + ";").Replace(";;", ";")
+    $env:LIB = $NewLibPath
+    
+    $CurrentPath = $env:PATH
+    $CleanedPathList = $CurrentPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewPath = ($CleanedPathList -join ";").Replace(";;", ";")
+    $NewPath = ($NewPath + ";").Replace(";;", ";")
+    $env:PATH = $NewPath
+    
     Write-Host "--- CARES Purge Complete ---" -ForegroundColor Green
 }
 
@@ -345,13 +394,13 @@ $caresLibDir = Join-Path $caresInstallDir "lib"
 $caresBinPath = Join-Path $caresInstallDir "bin"
 $caresCMakePath = $caresInstallDir.Replace('\', '/')
 
-$StaticLib = Join-Path $caresLibDir "caresstatic.lib"
-$SharedLib = Join-Path $caresLibDir "cares.lib"
-$BinaryLib = Join-Path $caresBinPath "cares.dll"
+$StaticLib = Join-Path $caresLibDir ("$caresLibName" + "static.lib")
+$SharedLib = Join-Path $caresLibDir "$caresLibName.lib"
+$BinaryLib = Join-Path $caresBinPath "$caresLibName.dll"
 $versionFile = Join-Path $caresInstallDir "version.json"
 
 # Fallback check for "z.lib" / "zs.lib" naming convention
-if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $caresLibDir "caress.lib" }
+if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $caresLibDir ("$caresLibName" + "s.lib") }
 #if (-not (Test-Path $SharedLib)) { $SharedLib = Join-Path $caresLibDir "z.lib" }
 #if (-not (Test-Path $BinaryLib)) { $BinaryLib = Join-Path $caresBinPath "z.dll" }
 
@@ -360,6 +409,7 @@ if ((Test-Path $StaticLib) -or (Test-Path $SharedLib) -or (Test-Path $BinaryLib)
     if (-not (Test-Path $caresHeader)) { $caresHeader = Join-Path $Source "include\ares_version.h" }
     $localVersion = "0.0.0"
     $rawVersion = $Branch
+    $binaryversion = "0"
 
     if (Test-Path $caresHeader) {
         # Extract version from #define ARES_VERSION_STR "1.34.5"
@@ -371,6 +421,7 @@ if ((Test-Path $StaticLib) -or (Test-Path $SharedLib) -or (Test-Path $BinaryLib)
         if ($versionMatch) {
             $localVersion = $versionMatch
             $rawVersion = $localVersion
+            $binaryversion = ([version]$localVersion).Major
             Write-Host "[VERSION] Detected cares: $localVersion" -ForegroundColor Cyan
         }
     }
@@ -383,6 +434,8 @@ if ((Test-Path $StaticLib) -or (Test-Path $SharedLib) -or (Test-Path $BinaryLib)
         commit     = $tagCommit;
         version    = $localVersion;
         rawversion = $rawVersion;
+        abiversion = $binaryversion;
+        soversion  = $binaryversion;
         date       = (Get-Date).ToString("yyyy-MM-dd");
         updated_at = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ");
         type       = "source_build";
@@ -398,9 +451,12 @@ $caresinclude = "VALUE_INCLUDE_PATH"
 $careslibrary = "VALUE_LIB_PATH"
 $caresbin = "VALUE_BIN_PATH"
 $caresversion = "VALUE_VERSION"
+$caresabiversion = "VALUE_ABI_VERSION"
+$caressoversion = "VALUE_SO_VERSION"
 $caresbinary = "VALUE_BINARY"
 $caresshared = "VALUE_SHARED"
 $caresstatic = "VALUE_STATIC"
+$careslibname = "VALUE_LIB_NAME"
 $carescmakepath = "VALUE_CMAKE_PATH"
 $env:CARES_PATH = $caresroot
 $env:CARES_ROOT = $caresroot
@@ -410,6 +466,13 @@ $env:CARES_LIBRARY_DIR = $careslibrary
 $env:BINARY_LIB_CARES = $caresbinary
 $env:SHARED_LIB_CARES = $caresshared
 $env:STATIC_LIB_CARES = $caresstatic
+$env:CARES_LIB_NAME = $careslibname
+$env:CARES_VERSION = $caresversion
+$env:CARES_MAJOR = ([version]$caresversion).Major
+$env:CARES_MINOR = ([version]$caresversion).Minor
+$env:CARES_PATCH = ([version]$caresversion).Patch
+$env:CARES_ABI_VERSION = $caresabiversion
+$env:CARES_SO_VERSION = $caressoversion
 if ($env:CMAKE_PREFIX_PATH -notlike "*$carescmakepath*") { $env:CMAKE_PREFIX_PATH = $carescmakepath + ";" + $env:CMAKE_PREFIX_PATH; $env:CMAKE_PREFIX_PATH = ($env:CMAKE_PREFIX_PATH).Replace(";;", ";") }
 if ($env:INCLUDE -notlike "*$caresinclude*") { $env:INCLUDE = $caresinclude + ";" + $env:INCLUDE; $env:INCLUDE = ($env:INCLUDE).Replace(";;", ";") }
 if ($env:LIB -notlike "*$careslibrary*") { $env:LIB = $careslibrary + ";" + $env:LIB; $env:LIB = ($env:LIB).Replace(";;", ";") }
@@ -421,9 +484,12 @@ Write-Host "CARES_ROOT: $env:CARES_ROOT" -ForegroundColor Gray
     -replace "VALUE_LIB_PATH", $caresLibDir `
     -replace "VALUE_BIN_PATH", $caresBinPath `
     -replace "VALUE_VERSION", $caresVersion `
+    -replace "VALUE_ABI_VERSION", $binaryversion `
+    -replace "VALUE_SO_VERSION", $binaryversion `
     -replace "VALUE_SHARED", $SharedLib `
     -replace "VALUE_BINARY", $BinaryLib `
     -replace "VALUE_STATIC", $StaticLib `
+    -replace "VALUE_LIB_NAME", $caresLibName `
     -replace "VALUE_CMAKE_PATH", $caresCMakePath
 
     $EnvContent | Out-File -FilePath $caresEnvScript -Encoding utf8
@@ -488,17 +554,17 @@ $CleanedPathList = $CurrentRawPath -split ';' | Where-Object {
     $_ -notlike "*$caresroot*"
 }
 
-$NewRawPath = ($CleanedPathList -join ";").Replace(";;", ";")
+$NewPath = ($CleanedPathList -join ";").Replace(";;", ";")
 
 $TargetPath = $caresbin
 
 # Rebuild
-$NewRawPath = ($NewRawPath + ";" + $TargetPath + ";").Replace(";;", ";")
+$NewPath = ($NewPath + ";" + $TargetPath + ";").Replace(";;", ";")
 Write-Host "[UPDATED] ($TargetScope) '$caresbin' synced in EXTCOMPLIBS_PATH" -ForegroundColor $ScopeColor
 
 # Save as ExpandString
-$RegKey.SetValue("EXTCOMPLIBS_PATH", $NewRawPath, [Microsoft.Win32.RegistryValueKind]::ExpandString)
-$env:EXTCOMPLIBS_PATH = $NewRawPath
+$RegKey.SetValue("EXTCOMPLIBS_PATH", $NewPath, [Microsoft.Win32.RegistryValueKind]::ExpandString)
+$env:EXTCOMPLIBS_PATH = $NewPath
 
 $RegKey.Close()
 

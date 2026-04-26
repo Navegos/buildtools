@@ -1,6 +1,9 @@
-# Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:x64-windows/build-protobuf.ps1
+# project: buildtools
+# file: x64-windows/build-protobuf.ps1
+# created: 2026-03-10
+# lastModified: 2026-04-26
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -136,18 +139,15 @@ New-Item -Path $BuildDirStatic -ItemType Directory -Force -ErrorAction SilentlyC
 # --- Dependencies: ---
 [string]$RootlibprotoInstallDir = Split-Path -Path $protoInstallDir -Parent
 
-# Load Zlib (protobuf requirement)
-if ([string]::IsNullOrWhiteSpace($env:ZLIB_LIBRARY_DIR) -or -not (Test-Path (Join-Path $env:ZLIB_LIBRARY_DIR "z.lib"))) {
+# Load Zlib requirement
+if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_ZLIB) -or -not (Test-Path $env:SHARED_LIB_ZLIB)) {
     $zlibEnvScript = Join-Path $EnvironmentDir "env-zlib.ps1"
-    if (Test-Path $zlibEnvScript) { . $zlibEnvScript } else {
+    if (Test-Path $zlibEnvScript) { . $zlibEnvScript }
+    if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_ZLIB) -or -not (Test-Path $env:SHARED_LIB_ZLIB)) {
         $zlibBuildScript = Join-Path $PSScriptRoot "build-zlib.ps1"
         if (Test-Path $zlibBuildScript) {
-            [string]$zlibInstallDir = Join-Path $RootlibprotoInstallDir "zlib"
-            & $zlibBuildScript -workspacePath $RootPath -zlibInstallDir $zlibInstallDir
-            if (Test-Path $zlibEnvScript) { . $zlibEnvScript } else {
-                Write-Error "zlib build finished but $zlibEnvScript was not created."
-                return
-            }
+            $zlibInstallDir = Join-Path $RootlibboostInstallDir "zlib"
+            & $zlibBuildScript -workspacePath $RootboostWorkspacePath -zlibInstallDir $zlibInstallDir
         } else {
             Write-Error "CRITICAL: Cannot build zlib. zlib is missing and $zlibBuildScript was not found."
             return

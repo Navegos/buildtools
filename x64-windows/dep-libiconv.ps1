@@ -1,6 +1,9 @@
-# Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:x64-windows/dep-libiconv.ps1
+# project: buildtools
+# file: x64-windows/dep-libiconv.ps1
+# created: 2026-03-07
+# lastModified: 2026-04-26
 
 param (
     [Parameter(HelpMessage = "Target vcpkg LIBICONV triplet")]
@@ -33,10 +36,10 @@ if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
 }
 
 # --- 2. Initialize vcpkg environment if missing ---
-if (-not $env:VCPKG_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_VCPKG) -or -not (Test-Path $env:BINARY_VCPKG)) {
     $vcpkgEnvScript = Join-Path $EnvironmentDir "env-vcpkg.ps1"
     if (Test-Path $vcpkgEnvScript) { . $vcpkgEnvScript }
-    if (-not $env:VCPKG_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_VCPKG) -or -not (Test-Path $env:BINARY_VCPKG)) {
         $depvcpkgEnvScript = Join-Path $PSScriptRoot "dep-vcpkg.ps1"
         if (Test-Path $depvcpkgEnvScript) { . $depvcpkgEnvScript }
         else {
@@ -152,8 +155,8 @@ if (-not $IsAdmin) {
     exit
 }
 
-$libiconvbinpath = "VALUE_LIBICONV_BIN_PATH"
-$libiconvtoolsbinpath = "VALUE_LIBICONV_TOOLS_BIN_PATH"
+$libiconvbinpath = "VALUE_ICONV_BIN_PATH"
+$libiconvtoolsbinpath = "VALUE_ICONV_TOOLS_BIN_PATH"
 
 $TargetScope = if ($IsAdmin) { "Machine" } else { "User" }
 $RegPath = if ($IsAdmin) { "System\CurrentControlSet\Control\Session Manager\Environment" } else { "Environment" }
@@ -179,7 +182,7 @@ $env:EXTCOMPLIBS_PATH = $CleanLibPath
 $RegKey.Close()
 
 Write-Host "[REMOVED] ($TargetScope) all '*$libiconvtoolsbinpath*' removed from EXTCOMP_PATH" -ForegroundColor $ScopeColor
-'@  -replace "VALUE_LIBICONV_TOOLS_BIN_PATH", $libiconvToolsBinInstallPath -replace "VALUE_LIBICONV_BIN_PATH", $libiconvBinInstallPath
+'@  -replace "VALUE_ICONV_TOOLS_BIN_PATH", $libiconvToolsBinInstallPath -replace "VALUE_ICONV_BIN_PATH", $libiconvBinInstallPath
 
         $CleanMachineEnvContent | Out-File -FilePath $libiconvCleanMachineEnvScript -Encoding utf8
         Write-Host "Created: $libiconvCleanMachineEnvScript" -ForegroundColor Gray
@@ -230,20 +233,74 @@ Write-Host "[REMOVED] ($TargetScope) all '*$libiconvtoolsbinpath*' removed from 
     Pop-Location
     
     # remove local Env variables for current session
-    Get-ChildItem Env:\LIBICONV_PATH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBICONV_ROOT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBICONV_BIN* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBICONV_TOOLS_BIN* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBICONV_INCLUDE_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBICONV_LIBRARY_DIR* | Remove-Item -ErrorAction SilentlyContinue
-
+    Get-ChildItem Env:\ICONV_PATH* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ICONV_ROOT* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ICONV_BIN* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ICONV_TOOLS_BIN* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ICONV_INCLUDE_DIR* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ICONV_LIBRARY_DIR* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\BINARY_LIB_ICONV* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\SHARED_LIB_ICONV* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\BINARY_LIB_CHARSET* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\SHARED_LIB_CHARSET* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ICONV_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CHARSET_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ICONV_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ICONV_MAJOR* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ICONV_MINOR* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ICONV_PATCH* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ICONV_ABI_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ICONV_SO_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CHARSET_ABI_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CHARSET_SO_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    
+    $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
+    $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewCMakePrefixPath = ($CleanedCMakePrefixPathList -join ";").Replace(";;", ";")
+    $NewCMakePrefixPath = ($NewCMakePrefixPath + ";").Replace(";;", ";")
+    $env:CMAKE_PREFIX_PATH = $NewCMakePrefixPath
+    
+    $CurrentIncludePath = $env:INCLUDE
+    $CleanedIncludePathList = $CurrentIncludePath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewIncludePath = ($CleanedIncludePathList -join ";").Replace(";;", ";")
+    $NewIncludePath = ($NewIncludePath + ";").Replace(";;", ";")
+    $env:INCLUDE = $NewIncludePath
+    
+    $CurrentLibPath = $env:LIB
+    $CleanedLibPathList = $CurrentLibPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewLibPath = ($CleanedLibPathList -join ";").Replace(";;", ";")
+    $NewLibPath = ($NewLibPath + ";").Replace(";;", ";")
+    $env:LIB = $NewLibPath
+    
+    $CurrentPath = $env:PATH
+    $CleanedPathList = $CurrentPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewPath = ($CleanedPathList -join ";").Replace(";;", ";")
+    $NewPath = ($NewPath + ";").Replace(";;", ";")
+    $env:PATH = $NewPath
+    
     Write-Host "--- LIBICONV Purge Complete ---" -ForegroundColor Green
 }
+
+$libiconvLibName = "iconv"
 
 # Fix this using vcpkg to get LIBICONV version
 $localVersion = "0.0.0"
 $rawVersion = "0.0.0"
-if (Test-Path (Join-Path $libiconvLibDir "iconv.lib")) {
+$binaryversion = "0"
+
+if (Test-Path (Join-Path $libiconvLibDir "$libiconvLibName.lib")) {
     $rawVersion = (vcpkg list libiconv:$Triplet | Select-Object -First 1).Trim()
     if ($rawVersion -match '^(\d+\.\d+(\.\d+)?)') { $localVersion = $Matches[1] }
 }
@@ -272,6 +329,7 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
 
     # 1. Locate the bin folder and the root folder
     $libiconvVersion = $localVersion
+    $binaryversion = ([version]$localVersion).Major
     if (-not (Test-Path $versionFile)) {
         $versionInfo = @{
             url        = $url;
@@ -279,6 +337,10 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
             commit     = $tagCommit;
             version    = $localVersion;
             rawversion = $rawVersion;
+            abiversion = $binaryversion;
+            soversion  = $binaryversion;
+            charsetabiversion = $binaryversion;
+            charsetsoversion  = $binaryversion;
             date       = (Get-Date).ToString("yyyy-MM-dd");
             updated_at = $updated_at;
             type       = "build_tool";
@@ -297,7 +359,8 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
     Pop-Location
 
     $libiconvVersion = $remoteVersion
-    if (Test-Path (Join-Path $libiconvLibDir "iconv.lib")) {
+    $binaryversion = ([version]$remoteVersion).Major
+    if (Test-Path (Join-Path $libiconvLibDir "$libiconvLibName.lib")) {
         $rawVersion = (vcpkg list libiconv:$Triplet | Select-Object -First 1).Trim()
     }
     $versionInfo = @{
@@ -306,6 +369,10 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
         commit     = $tagCommit;
         version    = $remoteVersion;
         rawversion = $rawVersion;
+        abiversion = $binaryversion;
+        soversion  = $binaryversion;
+        charsetabiversion = $binaryversion;
+        charsetsoversion  = $binaryversion;
         date       = (Get-Date).ToString("yyyy-MM-dd");
         updated_at = $updated_at;
         type       = "build_tool";
@@ -314,7 +381,7 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
 }
 
 # Finalize Environment Helper
-if (Test-Path (Join-Path $libiconvLibDir "iconv.lib")) {
+if (Test-Path (Join-Path $libiconvLibDir "$libiconvLibName.lib")) {
     # Generate Environment Helper with Clean Paths
     $libiconvInstallDir = $libiconvInstallDir.TrimEnd('\')
     $libiconvIncludeDir = $libiconvIncludeDir.TrimEnd('\')
@@ -323,6 +390,36 @@ if (Test-Path (Join-Path $libiconvLibDir "iconv.lib")) {
     $libiconvToolsBinPath = $libiconvToolsBinPath.TrimEnd('\')
     $libiconvCMakePath  = $libiconvInstallDir.Replace('\', '/')
     
+    $libName = $libiconvLibName
+    $charsetName = "charset"
+    $iconvAbi = "0"
+    $charsetAbi = "0"
+
+    # Detect iconv ABI (usually 2)
+    $iconvDll = Get-ChildItem -Path $libiconvBinPath -Filter "$libName-*.dll" | Select-Object -First 1
+    if ($iconvDll.Name -match "-(\d+)\.dll$") {
+        $iconvAbi = $matches[1]
+    }
+    
+    # Detect charset ABI (usually 1)
+    $charsetDll = Get-ChildItem -Path $libiconvBinPath -Filter "$charsetName-*.dll" | Select-Object -First 1
+    if ($charsetDll.Name -match "-(\d+)\.dll$") {
+        $charsetAbi = $matches[1]
+    }
+
+    $versionInfo.abiversion = $iconvAbi
+    $versionInfo.soversion = $iconvAbi
+    $versionInfo.charsetabiversion = $charsetAbi
+    $versionInfo.charsetsoversion = $charsetAbi
+
+    $versionInfo | ConvertTo-Json | Out-File -FilePath $versionFile -Encoding utf8 -Force
+
+    $SharedLib = Join-Path $libiconvLibDir "$libName.lib"
+    $BinaryLib = Join-Path $libiconvBinPath "$libName-$iconvAbi.dll"
+    
+    $SharedCharsetLib = Join-Path $libiconvLibDir "$charsetName.lib"
+    $BinaryCharsetLib = Join-Path $libiconvBinPath "$charsetName-$charsetAbi.dll"
+
     # --- 3. Create Environment Helper ---
     Write-Host "Generating environment helper script..." -ForegroundColor Cyan
 
@@ -334,27 +431,61 @@ $libiconvinclude = "VALUE_INCLUDE_PATH"
 $libiconvlibrary = "VALUE_LIB_PATH"
 $libiconvbin = "VALUE_BIN_PATH"
 $libiconvtoolsbin = "VALUE_TOOLS_BIN_PATH"
-$libiconvcmakepath = "VALUE_CMAKE_PATH"
 $libiconvversion = "VALUE_VERSION"
-$env:LIBICONV_PATH = $libiconvroot
-$env:LIBICONV_ROOT = $libiconvroot
-$env:LIBICONV_BIN = $libiconvbin
-$env:LIBICONV_TOOLS_BIN = $libiconvtoolsbin
-$env:LIBICONV_INCLUDE_DIR = $libiconvinclude
-$env:LIBICONV_LIBRARY_DIR = $libiconvlibrary
+$libiconvabiversion = "VALUE_ABI_VERSION"
+$libiconvsoversion = "VALUE_SO_VERSION"
+$charsetabiversion = "VALUE_CHARSET_ABI_VERSION"
+$charsetsoversion = "VALUE_CHARSET_SO_VERSION"
+$libiconvbinary = "VALUE_BINARY"
+$libiconvshared = "VALUE_SHARED"
+$charsetbinary = "VALUE_CHARSET_BINARY"
+$charsetshared = "VALUE_CHARSET_SHARED"
+$libiconvlibname = "VALUE_LIB_NAME"
+$charsetlibname = "VALUE_CHARSET_LIB_NAME"
+$libiconvcmakepath = "VALUE_CMAKE_PATH"
+$env:ICONV_PATH = $libiconvroot
+$env:ICONV_ROOT = $libiconvroot
+$env:ICONV_BIN = $libiconvbin
+$env:ICONV_TOOLS_BIN = $libiconvtoolsbin
+$env:ICONV_INCLUDE_DIR = $libiconvinclude
+$env:ICONV_LIBRARY_DIR = $libiconvlibrary
+$env:BINARY_LIB_ICONV = $libiconvbinary
+$env:SHARED_LIB_ICONV = $libiconvshared
+$env:BINARY_LIB_CHARSET = $charsetbinary
+$env:SHARED_LIB_CHARSET = $charsetshared
+$env:ICONV_LIB_NAME = $libiconvlibname
+$env:CHARSET_LIB_NAME = $charsetlibname
+$env:ICONV_VERSION = $libiconvversion
+$env:ICONV_MAJOR = ([version]$libiconvversion).Major
+$env:ICONV_MINOR = ([version]$libiconvversion).Minor
+$env:ICONV_PATCH = ([version]$libiconvversion).Patch
+$env:ICONV_ABI_VERSION = $libiconvabiversion
+$env:ICONV_SO_VERSION = $libiconvsoversion
+$env:CHARSET_ABI_VERSION = $charsetabiversion
+$env:CHARSET_SO_VERSION = $charsetsoversion
 if ($env:CMAKE_PREFIX_PATH -notlike "*$libiconvcmakepath*") { $env:CMAKE_PREFIX_PATH = $libiconvcmakepath + ";" + $env:CMAKE_PREFIX_PATH; $env:CMAKE_PREFIX_PATH = ($env:CMAKE_PREFIX_PATH).Replace(";;", ";") }
 if ($env:INCLUDE -notlike "*$libiconvinclude*") { $env:INCLUDE = $libiconvinclude + ";" + $env:INCLUDE; $env:INCLUDE = ($env:INCLUDE).Replace(";;", ";") }
 if ($env:LIB -notlike "*$libiconvlibrary*") { $env:LIB = $libiconvlibrary + ";" + $env:LIB; $env:LIB = ($env:LIB).Replace(";;", ";") }
 "$libiconvbin", "$libiconvtoolsbin" | ForEach-Object { if ($env:PATH -notlike "*$_*") { $env:PATH = $_ + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") } }
 Write-Host "LIBICONV Environment Loaded (Version: $libiconvversion) (Bin: $libiconvbin)" -ForegroundColor Green
-Write-Host "LIBICONV_ROOT: $env:LIBICONV_ROOT" -ForegroundColor Gray
+Write-Host "ICONV_ROOT: $env:ICONV_ROOT" -ForegroundColor Gray
 '@  -replace "VALUE_ROOT_PATH", $libiconvInstallDir `
     -replace "VALUE_INCLUDE_PATH", $libiconvIncludeDir `
     -replace "VALUE_LIB_PATH", $libiconvLibDir `
     -replace "VALUE_BIN_PATH", $libiconvBinPath `
     -replace "VALUE_TOOLS_BIN_PATH", $libiconvToolsBinPath `
-    -replace "VALUE_CMAKE_PATH", $libiconvCMakePath `
-    -replace "VALUE_VERSION", $libiconvVersion
+    -replace "VALUE_VERSION", $libiconvVersion `
+    -replace "VALUE_ABI_VERSION", $iconvAbi `
+    -replace "VALUE_SO_VERSION", $iconvAbi `
+    -replace "VALUE_CHARSET_ABI_VERSION", $charsetAbi `
+    -replace "VALUE_CHARSET_SO_VERSION", $charsetAbi `
+    -replace "VALUE_SHARED", $SharedLib `
+    -replace "VALUE_BINARY", $BinaryLib `
+    -replace "VALUE_CHARSET_SHARED", $SharedCharsetLib `
+    -replace "VALUE_CHARSET_BINARY", $BinaryCharsetLib `
+    -replace "VALUE_LIB_NAME", $libName `
+    -replace "VALUE_CHARSET_LIB_NAME", $charsetName `
+    -replace "VALUE_CMAKE_PATH", $libiconvCMakePath
 
     $EnvContent | Out-File -FilePath $libiconvEnvScript -Encoding utf8
     Write-Host "Created: $libiconvEnvScript" -ForegroundColor Gray
@@ -444,9 +575,9 @@ $env:EXTCOMPLIBS_PATH = $NewRawLibPath
 
 $RegKey.Close()
 
-$env:LIBICONV_ROOT = $libiconvroot
+$env:ICONV_ROOT = $libiconvroot
 Write-Host "libiconv Environment Loaded (Version: $libiconvversion) (Bin: $libiconvtoolsbin)" -ForegroundColor Green
-Write-Host "LIBICONV_ROOT: $env:LIBICONV_ROOT" -ForegroundColor Gray
+Write-Host "ICONV_ROOT: $env:ICONV_ROOT" -ForegroundColor Gray
 '@  -replace "VALUE_ROOT_PATH", $libiconvInstallDir `
     -replace "VALUE_BIN_PATH", $libiconvBinPath `
     -replace "VALUE_TOOLS_BIN_PATH", $libiconvToolsBinPath `

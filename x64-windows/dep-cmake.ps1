@@ -1,6 +1,10 @@
-# Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:x64-windows/dep-cmake.ps1
+# project: buildtools
+# file: x64-windows/dep-cmake.ps1
+# created: 2026-03-01
+# lastModified: 2026-04-26
+
 
 param (
     [Parameter(HelpMessage = "Path for cmake storage", Mandatory = $false)]
@@ -287,20 +291,24 @@ if (Test-Path $cmakeExePath) {
     # Generate Environment Helper with Clean Paths
     $cmakeBinPath = $cmakeBinPath.TrimEnd('\')
     $cmakeInstallDir = $cmakeInstallDir.TrimEnd('\')
+    $cmakeExePath = Join-Path $cmakeBinPath "cmake.exe"
 
     # Using a literal here-string with -replace to avoid accidental expansion of $env:PATH during creation
     $EnvContent = @'
 # CMAKE Environment Setup
 $cmakeroot = "VALUE_ROOT_PATH"
 $cmakebin = "VALUE_BIN_PATH"
+$cmakeexe = "VALUE_EXE_PATH"
 $cmakeversion = "VALUE_VERSION"
 $env:CMAKE_PATH = $cmakeroot
 $env:CMAKE_ROOT = $cmakeroot
 $env:CMAKE_BIN = $cmakebin
+$env:BINARY_CMAKE = $cmakeexe
 if ($env:PATH -notlike "*$cmakebin*") { $env:PATH = $cmakebin + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") }
 Write-Host "CMake Environment Loaded (Version: $cmakeversion) (Bin: $cmakebin)" -ForegroundColor Green
 Write-Host "CMAKE_ROOT: $env:CMAKE_ROOT" -ForegroundColor Gray
 '@  -replace "VALUE_BIN_PATH", $cmakeBinPath `
+    -replace "VALUE_EXE_PATH", $cmakeExePath `
     -replace "VALUE_ROOT_PATH", $cmakeInstallDir `
     -replace "VALUE_VERSION", $cmakeVersion
 

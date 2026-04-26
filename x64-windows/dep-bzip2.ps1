@@ -1,6 +1,9 @@
-# Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:x64-windows/dep-bzip2.ps1
+# project: buildtools
+# file: x64-windows/dep-bzip2.ps1
+# created: 2026-04-11
+# lastModified: 2026-04-26
 
 param (
     [Parameter(HelpMessage = "Target vcpkg BZIP2 triplet")]
@@ -33,10 +36,10 @@ if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
 }
 
 # --- 2. Initialize vcpkg environment if missing ---
-if (-not $env:VCPKG_PATH) {
+if ([string]::IsNullOrWhitespace($env:BINARY_VCPKG) -or -not (Test-Path $env:BINARY_VCPKG)) {
     $vcpkgEnvScript = Join-Path $EnvironmentDir "env-vcpkg.ps1"
     if (Test-Path $vcpkgEnvScript) { . $vcpkgEnvScript }
-    if (-not $env:VCPKG_PATH) {
+    if ([string]::IsNullOrWhitespace($env:BINARY_VCPKG) -or -not (Test-Path $env:BINARY_VCPKG)) {
         $depvcpkgEnvScript = Join-Path $PSScriptRoot "dep-vcpkg.ps1"
         if (Test-Path $depvcpkgEnvScript) { . $depvcpkgEnvScript }
         else {
@@ -76,9 +79,9 @@ try {
     Write-Host "Fetching latest BZIP2 version from vcpkg master..." -ForegroundColor Gray
     $bzip2Manifest = Invoke-RestMethod -Uri $rawJsonUrl
     $url = $rawJsonUrl
-    $tag_name = $bzip2Manifest.version
+    $tag_name = $bzip2Manifest."version-semver"
     $updated_at = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
-    $remoteVersionString = $bzip2Manifest.version.TrimStart('v')
+    $remoteVersionString = $bzip2Manifest."version-semver".TrimStart('v')
     
     # Clean remote version for comparison (e.g., "1.12.1")
     if ($remoteVersionString -match '^(\d+\.\d+(\.\d+)?)') { $remoteVersion = $Matches[1] }
@@ -237,14 +240,63 @@ Write-Host "[REMOVED] ($TargetScope) all '*$bzip2toolsbinpath*' removed from EXT
     Get-ChildItem Env:\BZIP2_TOOLS_BIN* | Remove-Item -ErrorAction SilentlyContinue
     Get-ChildItem Env:\BZIP2_INCLUDE_DIR* | Remove-Item -ErrorAction SilentlyContinue
     Get-ChildItem Env:\BZIP2_LIBRARY_DIR* | Remove-Item -ErrorAction SilentlyContinue
-
+    Get-ChildItem Env:\BINARY_LIB_BZIP2* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\SHARED_LIB_BZIP2* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\BZIP2_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\BZIP2_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\BZIP2_MAJOR* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\BZIP2_MINOR* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\BZIP2_PATCH* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\BZIP2_ABI_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\BZIP2_SO_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    
+    $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
+    $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewCMakePrefixPath = ($CleanedCMakePrefixPathList -join ";").Replace(";;", ";")
+    $NewCMakePrefixPath = ($NewCMakePrefixPath + ";").Replace(";;", ";")
+    $env:CMAKE_PREFIX_PATH = $NewCMakePrefixPath
+    
+    $CurrentIncludePath = $env:INCLUDE
+    $CleanedIncludePathList = $CurrentIncludePath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewIncludePath = ($CleanedIncludePathList -join ";").Replace(";;", ";")
+    $NewIncludePath = ($NewIncludePath + ";").Replace(";;", ";")
+    $env:INCLUDE = $NewIncludePath
+    
+    $CurrentLibPath = $env:LIB
+    $CleanedLibPathList = $CurrentLibPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewLibPath = ($CleanedLibPathList -join ";").Replace(";;", ";")
+    $NewLibPath = ($NewLibPath + ";").Replace(";;", ";")
+    $env:LIB = $NewLibPath
+    
+    $CurrentPath = $env:PATH
+    $CleanedPathList = $CurrentPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewPath = ($CleanedPathList -join ";").Replace(";;", ";")
+    $NewPath = ($NewPath + ";").Replace(";;", ";")
+    $env:PATH = $NewPath
+    
     Write-Host "--- BZIP2 Purge Complete ---" -ForegroundColor Green
 }
+
+$bzip2LibName = "bz2"
 
 # Fix this using vcpkg to get BZIP2 version
 $localVersion = "0.0.0"
 $rawVersion = "0.0.0"
-if (Test-Path (Join-Path $bzip2LibDir "bzip2uc.lib")) {
+$binaryversion = "0"
+
+if (Test-Path (Join-Path $bzip2LibDir "$bzip2LibName.lib")) {
     $rawVersion = (vcpkg list bzip2:$Triplet | Select-Object -First 1).Trim()
     if ($rawVersion -match '^(\d+\.\d+(\.\d+)?)') { $localVersion = $Matches[1] }
 }
@@ -273,6 +325,7 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
 
     # 1. Locate the bin folder and the root folder
     $bzip2Version = $localVersion
+    $binaryversion = ([version]$localVersion).Major
     if (-not (Test-Path $versionFile)) {
         $versionInfo = @{
             url        = $url;
@@ -280,6 +333,8 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
             commit     = $tagCommit;
             version    = $localVersion;
             rawversion = $rawVersion;
+            abiversion = $binaryversion;
+            soversion  = $binaryversion;
             date       = (Get-Date).ToString("yyyy-MM-dd");
             updated_at = $updated_at;
             type       = "build_tool";
@@ -299,7 +354,8 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
     Pop-Location
 
     $bzip2Version = $remoteVersion
-    if (Test-Path (Join-Path $bzip2LibDir "bz2.lib")) {
+    $binaryversion = ([version]$remoteVersion).Major
+    if (Test-Path (Join-Path $bzip2LibDir "$bzip2LibName.lib")) {
         $rawVersion = (vcpkg list bzip2:$Triplet | Select-Object -First 1).Trim()
     }
     $versionInfo = @{
@@ -308,6 +364,8 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
         commit     = $tagCommit;
         version    = $remoteVersion;
         rawversion = $rawVersion;
+        abiversion = $binaryversion;
+        soversion  = $binaryversion;
         date       = (Get-Date).ToString("yyyy-MM-dd");
         updated_at = $updated_at;
         type       = "build_tool";
@@ -317,7 +375,7 @@ if ($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") {
 
 # Finalize Environment Helper
 # BZIP2 typically produces bz2.lib etc.
-if (Test-Path (Join-Path $bzip2LibDir "bz2.lib")) {
+if (Test-Path (Join-Path $bzip2LibDir "$bzip2LibName.lib")) {
     # Generate Environment Helper with Clean Paths
     $bzip2InstallDir = $bzip2InstallDir.TrimEnd('\')
     $bzip2IncludeDir = $bzip2IncludeDir.TrimEnd('\')
@@ -325,6 +383,9 @@ if (Test-Path (Join-Path $bzip2LibDir "bz2.lib")) {
     $bzip2BinPath    = $bzip2BinPath.TrimEnd('\')
     $bzip2ToolsBinPath = $bzip2ToolsBinPath.TrimEnd('\')
     $bzip2CMakePath  = $bzip2InstallDir.Replace('\', '/')
+    
+    $SharedLib = Join-Path $bzip2LibDir "$bzip2LibName.lib"
+    $BinaryLib = Join-Path $bzip2BinPath "$bzip2LibName.dll"
     
     # --- 3. Create Environment Helper ---
     Write-Host "Generating environment helper script..." -ForegroundColor Cyan
@@ -337,14 +398,28 @@ $bzip2include = "VALUE_INCLUDE_PATH"
 $bzip2library = "VALUE_LIB_PATH"
 $bzip2bin = "VALUE_BIN_PATH"
 $bzip2toolsbin = "VALUE_TOOLS_BIN_PATH"
-$bzip2cmakepath = "VALUE_CMAKE_PATH"
 $bzip2version = "VALUE_VERSION"
+$bzip2abiversion = "VALUE_ABI_VERSION"
+$bzip2soversion = "VALUE_SO_VERSION"
+$bzip2binary = "VALUE_BINARY"
+$bzip2shared = "VALUE_SHARED"
+$bzip2libname = "VALUE_LIB_NAME"
+$bzip2cmakepath = "VALUE_CMAKE_PATH"
 $env:BZIP2_PATH = $bzip2root
 $env:BZIP2_ROOT = $bzip2root
 $env:BZIP2_BIN = $bzip2bin
 $env:BZIP2_TOOLS_BIN = $bzip2toolsbin
 $env:BZIP2_INCLUDE_DIR = $bzip2include
 $env:BZIP2_LIBRARY_DIR = $bzip2library
+$env:BINARY_LIB_BZIP2 = $bzip2binary
+$env:SHARED_LIB_BZIP2 = $bzip2shared
+$env:BZIP2_LIB_NAME = $bzip2libname
+$env:BZIP2_VERSION = $bzip2version
+$env:BZIP2_MAJOR = ([version]$bzip2version).Major
+$env:BZIP2_MINOR = ([version]$bzip2version).Minor
+$env:BZIP2_PATCH = ([version]$bzip2version).Patch
+$env:BZIP2_ABI_VERSION = $bzip2abiversion
+$env:BZIP2_SO_VERSION = $bzip2soversion
 if ($env:CMAKE_PREFIX_PATH -notlike "*$bzip2cmakepath*") { $env:CMAKE_PREFIX_PATH = $bzip2cmakepath + ";" + $env:CMAKE_PREFIX_PATH; $env:CMAKE_PREFIX_PATH = ($env:CMAKE_PREFIX_PATH).Replace(";;", ";") }
 if ($env:INCLUDE -notlike "*$bzip2include*") { $env:INCLUDE = $bzip2include + ";" + $env:INCLUDE; $env:INCLUDE = ($env:INCLUDE).Replace(";;", ";") }
 if ($env:LIB -notlike "*$bzip2library*") { $env:LIB = $bzip2library + ";" + $env:LIB; $env:LIB = ($env:LIB).Replace(";;", ";") }
@@ -356,8 +431,13 @@ Write-Host "BZIP2_ROOT: $env:BZIP2_ROOT" -ForegroundColor Gray
     -replace "VALUE_LIB_PATH", $bzip2LibDir `
     -replace "VALUE_BIN_PATH", $bzip2BinPath `
     -replace "VALUE_TOOLS_BIN_PATH", $bzip2ToolsBinPath `
-    -replace "VALUE_CMAKE_PATH", $bzip2CMakePath `
-    -replace "VALUE_VERSION", $bzip2Version
+    -replace "VALUE_VERSION", $bzip2Version `
+    -replace "VALUE_ABI_VERSION", $binaryversion `
+    -replace "VALUE_SO_VERSION", $binaryversion `
+    -replace "VALUE_SHARED", $SharedLib `
+    -replace "VALUE_BINARY", $BinaryLib `
+    -replace "VALUE_LIB_NAME", $bzip2LibName `
+    -replace "VALUE_CMAKE_PATH", $bzip2CMakePath
 
     $EnvContent | Out-File -FilePath $bzip2EnvScript -Encoding utf8
     Write-Host "Created: $bzip2EnvScript" -ForegroundColor Gray

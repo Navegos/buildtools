@@ -1,6 +1,9 @@
-# Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:x64-windows/dep-vcpkg.ps1
+# project: buildtools
+# file: x64-windows/dep-vcpkg.ps1
+# created: 2026-03-08
+# lastModified: 2026-04-26
 
 param (
     [Parameter(HelpMessage = "Path for vcpkg storage", Mandatory = $false)]
@@ -285,20 +288,24 @@ if (Test-Path $vcpkgExePath) {
     # Generate Environment Helper with Clean Paths
     $vcpkgBinPath = $vcpkgBinPath.TrimEnd('\')
     $vcpkgInstallDir = $vcpkgInstallDir.TrimEnd('\')
+    $vcpkgExePath = Join-Path $vcpkgBinPath "vcpkg.exe"
 
     # Using a literal here-string with -replace to avoid accidental expansion of $env:PATH during creation
     $EnvContent = @'
 # VCPKG Environment Setup
 $vcpkgroot = "VALUE_ROOT_PATH"
 $vcpkgbin = "VALUE_BIN_PATH"
+$vcpkgexe = "VALUE_EXE_PATH"
 $vcpkgversion = "VALUE_VERSION"
 $env:VCPKG_PATH = $vcpkgroot
 $env:VCPKG_ROOT = $vcpkgroot
 $env:VCPKG_BIN = $vcpkgbin
+$env:BINARY_VCPKG = $vcpkgexe
 if ($env:PATH -notlike "*$vcpkgbin*") { $env:PATH = $vcpkgbin + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") }
 Write-Host "vcpkg Environment Loaded (Version: $vcpkgversion) (Bin: $vcpkgbin)" -ForegroundColor Green
 Write-Host "VCPKG_ROOT: $env:VCPKG_ROOT" -ForegroundColor Gray
 '@  -replace "VALUE_BIN_PATH", $vcpkgBinPath `
+    -replace "VALUE_EXE_PATH", $vcpkgExePath `
     -replace "VALUE_ROOT_PATH", $vcpkgInstallDir `
     -replace "VALUE_VERSION", $vcpkgVersion
 

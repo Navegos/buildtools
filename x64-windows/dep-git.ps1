@@ -1,6 +1,9 @@
-# Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:x64-windows/dep-git.ps1
+# project: buildtools
+# file: x64-windows/dep-git.ps1
+# created: 2026-03-14
+# lastModified: 2026-04-26
 
 param (
     [Parameter(HelpMessage = "Path for git Installation", Mandatory = $false)]
@@ -45,7 +48,7 @@ if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env
     return
 }
 
-Write-Host "--- Navegos Git Management ---" -ForegroundColor Cyan
+Write-Host "--- Git Management ---" -ForegroundColor Cyan
 
 $EnvironmentDir = "$env:ENVIRONMENT_PATH"
 
@@ -159,7 +162,7 @@ $vRemote = [version]$remoteVersion
 
 # --- 1. Detect and Install/Update via WinGet ---
 function Install-Or-Update-Git {
-    Write-Host "--- Navegos Git Provisioning ---" -ForegroundColor Cyan
+    Write-Host "--- Git Provisioning ---" -ForegroundColor Cyan
     
     # Components mapping:
     # ext\shell\here: Explorer integration (Bash/Gui Here)
@@ -366,21 +369,25 @@ if (Test-Path $gitExePath) {
     # Generate Environment Helper with Clean Paths
     $gitBinPath = $gitBinPath.TrimEnd('\')
     $gitInstallDir = $gitInstallDir.TrimEnd('\')
+    $gitExePath = Join-Path $gitBinPath "git.exe"
 
     # Using a literal here-string with -replace to avoid accidental expansion of $env:PATH during creation
     $EnvContent = @'
 # GIT Environment Setup
 $gitroot = "VALUE_ROOT_PATH"
 $gitbin = "VALUE_BIN_PATH"
+$gitexe = "VALUE_EXE_PATH"
 $gitversion = "VALUE_VERSION"
 $gitunixTools = Join-Path $gitroot "usr\bin"
 $env:GIT_PATH = $gitroot
 $env:GIT_ROOT = $gitroot
 $env:GIT_BIN = $gitbin
+$env:BINARY_GIT = $gitexe
 "$gitunixTools", "$gitroot", "$gitbin" | ForEach-Object { if ($env:PATH -notlike "*$_*") { $env:PATH = $_ + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") } }
 Write-Host "Git Environment Loaded (Version: $gitversion) (Bin: $gitbin)" -ForegroundColor Green
 Write-Host "GIT_ROOT: $env:GIT_ROOT" -ForegroundColor Gray
 '@  -replace "VALUE_BIN_PATH", $gitBinPath `
+    -replace "VALUE_EXE_PATH", $gitExePath `
     -replace "VALUE_ROOT_PATH", $gitInstallDir `
     -replace "VALUE_VERSION", $gitVersion
 

@@ -1,6 +1,9 @@
-# Copyright 2026 (C) Navegos. DevelVitorF. All Rights Reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-# file:x64-windows/dep-llvm.ps1
+# project: buildtools
+# file: x64-windows/dep-llvm.ps1
+# created: 2026-03-02
+# lastModified: 2026-04-26
 
 param (
     [Parameter(HelpMessage = "Path for llvm storage", Mandatory = $false)]
@@ -320,20 +323,24 @@ if (Test-Path $clangExePath) {
     # Generate Environment Helper with Clean Paths
     $llvmBinPath = $llvmBinPath.TrimEnd('\')
     $llvmInstallDir = $llvmInstallDir.TrimEnd('\')
+    $clangExePath = Join-Path $llvmBinPath "clang.exe"
 
     # Using a literal here-string with -replace to avoid accidental expansion of $env:PATH during creation
     $EnvContent = @'
 # LLVM Environment Setup
 $llvmroot = "VALUE_ROOT_PATH"
 $llvmbin = "VALUE_BIN_PATH"
+$clangexe = "VALUE_EXE_PATH"
 $llvmversion = "VALUE_VERSION"
 $env:LLVM_PATH = $llvmroot
 $env:LLVM_ROOT = $llvmroot
 $env:LLVM_BIN = $llvmbin
+$env:BINARY_CLANG = $clangexe
 if ($env:PATH -notlike "*$llvmbin*") { $env:PATH = $llvmbin + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") }
 Write-Host "LLVM Environment Loaded (Version: $llvmversion) (Bin: $llvmbin)" -ForegroundColor Green
 Write-Host "LLVM_ROOT: $env:LLVM_ROOT" -ForegroundColor Gray
 '@  -replace "VALUE_BIN_PATH", $llvmBinPath `
+    -replace "VALUE_EXE_PATH", $clangExePath `
     -replace "VALUE_ROOT_PATH", $llvmInstallDir `
     -replace "VALUE_VERSION", $llvmVersion
 

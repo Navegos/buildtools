@@ -1,0 +1,432 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 0e890a50..44668d76 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -38,11 +38,6 @@ elseif (DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
+     message(FATAL_ERROR "CMAKE_MSVC_RUNTIME_LIBRARY was defined while policy CMP0091 is not available. Use CMake 3.15 or newer.")
+ endif()
+ 
+-if (POLICY CMP0148)
+-    # CMake 3.27: The FindPythonInterp and FindPythonLibs modules are removed
+-    cmake_policy(SET CMP0148 OLD)
+-endif()
+-
+ if (TBB_WINDOWS_DRIVER AND (NOT ("${CMAKE_MSVC_RUNTIME_LIBRARY}" STREQUAL MultiThreaded OR "${CMAKE_MSVC_RUNTIME_LIBRARY}" STREQUAL MultiThreadedDebug)))
+     message(FATAL_ERROR "Enabled TBB_WINDOWS_DRIVER requires CMAKE_MSVC_RUNTIME_LIBRARY to be set to MultiThreaded or MultiThreadedDebug.")
+ endif()
+diff --git a/cmake/python/test_launcher.cmake b/cmake/python/test_launcher.cmake
+index a9aa6309..19f2b2ba 100644
+--- a/cmake/python/test_launcher.cmake
++++ b/cmake/python/test_launcher.cmake
+@@ -12,13 +12,15 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ 
+-if (POLICY CMP0148)
+-    # CMake 3.27: The FindPythonInterp and FindPythonLibs modules are removed
+-    cmake_policy(SET CMP0148 OLD)
++set(PY_EXECUTABLE "")
++if(CMAKE_VERSION VERSION_LESS 3.12)
++  find_package(PythonInterp 3.5 REQUIRED)
++  set(PY_EXECUTABLE "${PYTHON_EXECUTABLE}")
++else()
++  find_package(Python3 3.5 REQUIRED COMPONENTS Interpreter Development)
++  set(PY_EXECUTABLE "${Python3_EXECUTABLE}")
+ endif()
+ 
+-find_package(PythonInterp 3.5 REQUIRED)
+-
+ file(GLOB_RECURSE MODULES_LIST "${PYTHON_MODULE_BUILD_PATH}/*TBB.py*" )
+ list(LENGTH MODULES_LIST MODULES_COUNT)
+ 
+@@ -34,7 +36,7 @@ get_filename_component(PYTHON_MODULE_PATH ${PYTHON_MODULE} DIRECTORY)
+ execute_process(
+     COMMAND
+         ${CMAKE_COMMAND} -E env LD_LIBRARY_PATH=${TBB_BINARIES_PATH}
+-        ${PYTHON_EXECUTABLE} -m tbb test
++        ${PY_EXECUTABLE} -m tbb test
+     WORKING_DIRECTORY ${PYTHON_MODULE_PATH}
+     RESULT_VARIABLE CMD_RESULT
+ )
+diff --git a/python/CMakeLists.txt b/python/CMakeLists.txt
+index a80240c5..fc20c055 100644
+--- a/python/CMakeLists.txt
++++ b/python/CMakeLists.txt
+@@ -18,7 +18,7 @@ if(CMAKE_VERSION VERSION_LESS 3.12)
+   find_package(PythonInterp 3.5 REQUIRED)
+   set(PY_EXECUTABLE "${PYTHON_EXECUTABLE}")
+ else()
+-  find_package(Python3 3.5 REQUIRED COMPONENTS Interpreter)
++  find_package(Python3 3.5 REQUIRED COMPONENTS Interpreter Development)
+   set(PY_EXECUTABLE "${Python3_EXECUTABLE}")
+ endif()
+ 
+diff --git a/src/tbb/dynamic_link.cpp b/src/tbb/dynamic_link.cpp
+index 868bb96c..65cb00b0 100644
+--- a/src/tbb/dynamic_link.cpp
++++ b/src/tbb/dynamic_link.cpp
+@@ -48,7 +48,27 @@
+ #ifndef PATH_MAX
+     #define PATH_MAX                MAX_PATH
+ #endif
++
++#ifndef _UNICODE
++#ifdef _WIN32
++#define UNICODE_LPCSTR LPCSTR
++#define UNICODE_LPSTR LPSTR
++#else
++#define UNICODE_LPCSTR const char*
++#define UNICODE_LPSTR char*
++#endif
++#else
++#ifdef _WIN32
++#define UNICODE_LPCSTR LPCWSTR
++#define UNICODE_LPSTR LPWSTR
++#else
++#define UNICODE_LPCSTR const wchar_t*
++#define UNICODE_LPSTR char wchar_t*
++#endif
++#endif
++
+ #else /* _WIN32 */
++	#include <cstring>
+     #include <dlfcn.h>
+     #include <unistd.h>
+ 
+@@ -350,7 +370,7 @@ namespace r1 {
+         HMODULE handle;
+         BOOL brc = GetModuleHandleEx(
+             GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+-            (LPCSTR)( & dynamic_link ), // any function inside the library can be used for the address
++            (UNICODE_LPCSTR)( & dynamic_link ), // any function inside the library can be used for the address
+             & handle
+             );
+         if ( !brc ) { // Error occurred.
+@@ -359,7 +379,7 @@ namespace r1 {
+             return;
+         }
+         // Now get path to our DLL.
+-        DWORD drc = GetModuleFileName( handle, ap_data._path, static_cast< DWORD >( PATH_MAX ) );
++        DWORD drc = GetModuleFileName( handle, reinterpret_cast<UNICODE_LPSTR>(ap_data._path), static_cast< DWORD >( PATH_MAX ) );
+         if ( drc == 0 ) { // Error occurred.
+             int err = GetLastError();
+             DYNAMIC_LINK_WARNING( dl_sys_fail, "GetModuleFileName", err );
+@@ -527,7 +547,7 @@ namespace r1 {
+     {
+         dynamic_link_handle library_handle{};
+ #if _WIN32
+-        auto res = GetModuleHandleEx(0, library, &library_handle);
++        auto res = GetModuleHandleEx(0, reinterpret_cast<UNICODE_LPCSTR>(library), &library_handle);
+         __TBB_ASSERT_EX((res && library_handle) || (!res && !library_handle), nullptr);
+ #else /* _WIN32 */
+     #if !__TBB_DYNAMIC_LOAD_ENABLED /* only __TBB_WEAK_SYMBOLS_PRESENT is defined */
+@@ -752,7 +772,7 @@ namespace r1 {
+         UINT prev_mode = SetErrorMode (SEM_FAILCRITICALERRORS);
+ #endif /* _WIN32 */
+         // The argument of loading_flags is ignored on Windows
+-        library_handle = dlopen( path, loading_flags(flags) );
++        library_handle = dlopen(reinterpret_cast<UNICODE_LPCSTR>(path), loading_flags(flags));
+ #if _WIN32
+         SetErrorMode (prev_mode);
+ #endif /* _WIN32 */
+diff --git a/src/tbb/itt_notify.cpp b/src/tbb/itt_notify.cpp
+index eda5e6ad..7590440d 100644
+--- a/src/tbb/itt_notify.cpp
++++ b/src/tbb/itt_notify.cpp
+@@ -17,9 +17,9 @@
+ #if __TBB_USE_ITT_NOTIFY
+ 
+ #if _WIN32||_WIN64
+-    #ifndef UNICODE
+-        #define UNICODE
+-    #endif
++#if     defined(_UNICODE) && !defined(UNICODE)
++#       define UNICODE
++#   endif
+ #else
+     #pragma weak dlopen
+     #pragma weak dlsym
+@@ -31,11 +31,14 @@
+ extern "C" void ITT_DoOneTimeInitialization();
+ #define __itt_init_ittlib_name(x,y) (ITT_DoOneTimeInitialization(), true)
+ 
++extern "C" void MallocInitializeITT();
+ #elif __TBBMALLOC_BUILD
+ 
+ extern "C" void MallocInitializeITT();
+ #define __itt_init_ittlib_name(x,y) (MallocInitializeITT(), true)
+ 
++extern "C" void ITT_DoOneTimeInitialization();
++
+ #else
+ #error This file is expected to be used for either TBB or TBB allocator build.
+ #endif // __TBB_BUILD
+diff --git a/src/tbbbind/tbb_bind.cpp b/src/tbbbind/tbb_bind.cpp
+index 26fa6747..f47b89fe 100644
+--- a/src/tbbbind/tbb_bind.cpp
++++ b/src/tbbbind/tbb_bind.cpp
+@@ -208,7 +208,7 @@ private:
+                 hwloc_cpuset_t& current_mask = core_types_affinity_masks_list[core_type];
+                 current_mask = hwloc_bitmap_alloc();
+ 
+-                if (!hwloc_cpukinds_get_info(topology, core_type, current_mask, &efficiency, nullptr, nullptr, 0)
++                if (!hwloc_cpukinds_get_info(topology, core_type, current_mask, &efficiency, nullptr, 0)
+                     && efficiency >= 0
+                 ) {
+                     hwloc_bitmap_and(current_mask, current_mask, process_cpu_affinity_mask);
+diff --git a/src/tbbmalloc_proxy/function_replacement.cpp b/src/tbbmalloc_proxy/function_replacement.cpp
+index ad05354f..96b89437 100644
+--- a/src/tbbmalloc_proxy/function_replacement.cpp
++++ b/src/tbbmalloc_proxy/function_replacement.cpp
+@@ -41,7 +41,7 @@
+ // The information about a standard memory allocation function for the replacement log
+ struct FunctionInfo {
+     const char* funcName;
+-    const char* dllName;
++    const unicode_char_t* dllName;
+ };
+ 
+ // Namespace that processes and manages the output of records to the Log journal
+@@ -82,8 +82,8 @@ namespace Log {
+         char* entry = (char*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, RECORD_LENGTH);
+         __TBB_ASSERT(entry, "Invalid memory was returned");
+ 
+-        LOG_PRINT(entry, RECORD_LENGTH, "%s: %s (%s), byte pattern: <%s>",
+-            status ? "Success" : "Fail", functionInfo.funcName, functionInfo.dllName, opcodeString);
++        LOG_PRINT(entry, RECORD_LENGTH, "%s: %s (" WCHAR_SPEC "), byte pattern: <%s>",
++                  status ? "Success" : "Fail", functionInfo.funcName, functionInfo.dllName, opcodeString);
+ 
+         records[record_number++] = entry;
+     }
+@@ -555,7 +555,7 @@ FRR_TYPE ReplaceFunctionW(const wchar_t *dllName, const char *funcName, FUNCPTR
+     return FRR_OK;
+ }
+ 
+-bool IsPrologueKnown(const char* dllName, const char *funcName, const char **opcodes, HMODULE module)
++bool IsPrologueKnown(const unicode_char_t* dllName, const char *funcName, const char **opcodes, HMODULE module)
+ {
+     FARPROC inpFunc = GetProcAddress(module, funcName);
+     FunctionInfo functionInfo = { funcName, dllName };
+diff --git a/src/tbbmalloc_proxy/function_replacement.h b/src/tbbmalloc_proxy/function_replacement.h
+index a3ec138a..aa22e9c3 100644
+--- a/src/tbbmalloc_proxy/function_replacement.h
++++ b/src/tbbmalloc_proxy/function_replacement.h
+@@ -32,6 +32,35 @@ typedef enum {
+ 
+ typedef void (*FUNCPTR)();
+ 
++#if _WIN32||_WIN64
++#undef __TBB_T
++#endif
++
++#ifndef _UNICODE
++typedef char unicode_char_t;
++#define WCHAR_SPEC "%s"
++#define UNICODE_CHAR_T 1
++#else
++typedef wchar_t unicode_char_t;
++#define WCHAR_SPEC "%ls"
++#define UNICODE_CHAR_T 2
++#endif
++
++namespace tbb {
++//! Unicode support
++#if (_WIN32||_WIN64) && (UNICODE || _UNICODE) && !__MINGW32__
++    //! Unicode character type. Always wchar_t on Windows.
++    /** We do not use typedefs from Windows TCHAR family to keep consistence of TBB coding style. **/
++typedef wchar_t tchar;
++//! Standard Windows macro to markup the string literals.
++#define __TBB_T(string_literal) L ## string_literal
++#else /* !WIN */
++typedef char tchar;
++//! Standard Windows style macro to markup the string literals.
++#define __TBB_T(string_literal) string_literal
++#endif /* !WIN */
++} // namespace tbb
++
+ #ifndef UNICODE
+ #define ReplaceFunction ReplaceFunctionA
+ #else
+@@ -41,7 +70,7 @@ typedef void (*FUNCPTR)();
+ FRR_TYPE ReplaceFunctionA(const char *dllName, const char *funcName, FUNCPTR newFunc, const char ** opcodes, FUNCPTR* origFunc=nullptr);
+ FRR_TYPE ReplaceFunctionW(const wchar_t *dllName, const char *funcName, FUNCPTR newFunc, const char ** opcodes, FUNCPTR* origFunc=nullptr);
+ 
+-bool IsPrologueKnown(const char* dllName, const char *funcName, const char **opcodes, HMODULE module);
++bool IsPrologueKnown(const unicode_char_t* dllName, const char *funcName, const char **opcodes, HMODULE module);
+ 
+ // Utilities to convert between ADDRESS and LPVOID
+ union Int2Ptr {
+diff --git a/src/tbbmalloc_proxy/proxy.cpp b/src/tbbmalloc_proxy/proxy.cpp
+index 8c2b12c2..08f70c36 100644
+--- a/src/tbbmalloc_proxy/proxy.cpp
++++ b/src/tbbmalloc_proxy/proxy.cpp
+@@ -475,6 +475,7 @@ const char* known_bytecodes[] = {
+     nullptr
+     };
+ 
++#ifndef UNICODE
+ #define __TBB_ORIG_ALLOCATOR_REPLACEMENT_CALL_ENTRY(CRT_VER,function_name,dbgsuffix) \
+     ReplaceFunctionWithStore( #CRT_VER #dbgsuffix ".dll", #function_name, \
+       (FUNCPTR)__TBB_malloc_safer_##function_name##_##CRT_VER##dbgsuffix, \
+@@ -498,6 +499,31 @@ const char* known_bytecodes[] = {
+       __TBB_ORIG_ALLOCATOR_REPLACEMENT_CALL_ENTRY_NO_FALLBACK(CRT_VER,_aligned_realloc,dbgsuffix) \
+     } else                                                                                        \
+         SkipReplacement(#CRT_VER #dbgsuffix ".dll");
++#else
++#define __TBB_ORIG_ALLOCATOR_REPLACEMENT_CALL_ENTRY(CRT_VER,function_name,dbgsuffix) \
++    ReplaceFunctionWithStore( #CRT_VER #dbgsuffix L".dll", #function_name, \
++      (FUNCPTR)__TBB_malloc_safer_##function_name##_##CRT_VER##dbgsuffix, \
++      known_bytecodes, (FUNCPTR*)&orig_##function_name##_##CRT_VER##dbgsuffix );
++
++#define __TBB_ORIG_ALLOCATOR_REPLACEMENT_CALL_ENTRY_NO_FALLBACK(CRT_VER,function_name,dbgsuffix) \
++    ReplaceFunctionWithStore( #CRT_VER #dbgsuffix L".dll", #function_name, \
++      (FUNCPTR)__TBB_malloc_safer_##function_name##_##CRT_VER##dbgsuffix, 0, nullptr );
++
++#define __TBB_ORIG_ALLOCATOR_REPLACEMENT_CALL_ENTRY_REDIRECT(CRT_VER,function_name,dest_func,dbgsuffix) \
++    ReplaceFunctionWithStore( #CRT_VER #dbgsuffix L".dll", #function_name, \
++      (FUNCPTR)__TBB_malloc_safer_##dest_func##_##CRT_VER##dbgsuffix, 0, nullptr );
++
++#define __TBB_ORIG_ALLOCATOR_REPLACEMENT_CALL_IMPL(CRT_VER,dbgsuffix)                             \
++    if (BytecodesAreKnown(#CRT_VER #dbgsuffix L".dll")) {                                          \
++      __TBB_ORIG_ALLOCATOR_REPLACEMENT_CALL_ENTRY(CRT_VER,free,dbgsuffix)                         \
++      __TBB_ORIG_ALLOCATOR_REPLACEMENT_CALL_ENTRY(CRT_VER,_msize,dbgsuffix)                       \
++      __TBB_ORIG_ALLOCATOR_REPLACEMENT_CALL_ENTRY_NO_FALLBACK(CRT_VER,realloc,dbgsuffix)          \
++      __TBB_ORIG_ALLOCATOR_REPLACEMENT_CALL_ENTRY(CRT_VER,_aligned_free,dbgsuffix)                \
++      __TBB_ORIG_ALLOCATOR_REPLACEMENT_CALL_ENTRY(CRT_VER,_aligned_msize,dbgsuffix)               \
++      __TBB_ORIG_ALLOCATOR_REPLACEMENT_CALL_ENTRY_NO_FALLBACK(CRT_VER,_aligned_realloc,dbgsuffix) \
++    } else                                                                                        \
++        SkipReplacement(#CRT_VER #dbgsuffix L".dll");
++#endif
+ 
+ #define __TBB_ORIG_ALLOCATOR_REPLACEMENT_CALL_RELEASE(CRT_VER) __TBB_ORIG_ALLOCATOR_REPLACEMENT_CALL_IMPL(CRT_VER,)
+ #define __TBB_ORIG_ALLOCATOR_REPLACEMENT_CALL_DEBUG(CRT_VER) __TBB_ORIG_ALLOCATOR_REPLACEMENT_CALL_IMPL(CRT_VER,d)
+@@ -562,6 +588,10 @@ void operator_delete_arr_t(void* ptr, const std::nothrow_t&) noexcept {
+     __TBB_malloc_safer_delete(ptr);
+ }
+ 
++#ifndef UNICODE
++#ifndef __TBB_strcmp
++#define __TBB_strcmp strcmp
++#endif
+ struct Module {
+     const char *name;
+     bool        doFuncReplacement; // do replacement in the DLL
+@@ -592,6 +622,41 @@ Module modules_to_replace[] = {
+     {"msvcrt.dll", true},
+ #endif
+     };
++#else
++#ifndef __TBB_strcmp
++#define __TBB_strcmp wcscmp
++#endif
++struct Module {
++    const wchar_t *name;
++    bool        doFuncReplacement; // do replacement in the DLL
++};
++
++Module modules_to_replace[] = {
++    {L"msvcr100d.dll", true},
++    {L"msvcr100.dll", true},
++    {L"msvcr110d.dll", true},
++    {L"msvcr110.dll", true},
++    {L"msvcr120d.dll", true},
++    {L"msvcr120.dll", true},
++    {L"ucrtbase.dll", true},
++//    "ucrtbased.dll" is not supported because of problems with _dbg functions
++#if __TBB_OVERLOAD_OLD_MSVCR
++    {L"msvcr90d.dll", true},
++    {L"msvcr90.dll", true},
++    {L"msvcr80d.dll", true},
++    {L"msvcr80.dll", true},
++    {L"msvcr70d.dll", true},
++    {L"msvcr70.dll", true},
++    {L"msvcr71d.dll", true},
++    {L"msvcr71.dll", true},
++#endif
++#if __TBB_TODO
++    // TODO: Try enabling replacement for non-versioned system binaries below
++    {L"msvcrtd.dll", true},
++    {L"msvcrt.dll", true},
++#endif
++    };
++#endif
+ 
+ /*
+ We need to replace following functions:
+@@ -649,14 +714,6 @@ FRDATA cxx_routines_to_replace[] = {
+     { "??_U@YAPAXIABUnothrow_t@std@@@Z", (FUNCPTR)operator_new_arr_t, FRR_IGNORE }
+ };
+ 
+-#ifndef UNICODE
+-typedef char unicode_char_t;
+-#define WCHAR_SPEC "%s"
+-#else
+-typedef wchar_t unicode_char_t;
+-#define WCHAR_SPEC "%ls"
+-#endif
+-
+ // Check that we recognize bytecodes that should be replaced by trampolines.
+ // If some functions have unknown prologue patterns, replacement should not be done.
+ bool BytecodesAreKnown(const unicode_char_t *dllName)
+@@ -668,8 +725,10 @@ bool BytecodesAreKnown(const unicode_char_t *dllName)
+         return false;
+     for (int i=0; funcName[i]; i++)
+         if (! IsPrologueKnown(dllName, funcName[i], known_bytecodes, module)) {
+-            fprintf(stderr, "TBBmalloc: skip allocation functions replacement in " WCHAR_SPEC
+-                    ": unknown prologue for function " WCHAR_SPEC "\n", dllName, funcName[i]);
++            fprintf(stderr, "TBBmalloc: skip allocation functions replacement in " WCHAR_SPEC ": unknown prologue for function "
++                            "%s"
++                            "\n",
++                    dllName, funcName[i]);
+             return false;
+         }
+     return true;
+@@ -686,12 +745,12 @@ void SkipReplacement(const unicode_char_t *dllName)
+     size_t real_sz;
+     char *dllStr = buffer;
+ 
+-    errno_t ret = wcstombs_s(&real_sz, dllStr, sz, dllName, sz-1);
++    [[maybe_unused]] errno_t ret = wcstombs_s(&real_sz, dllStr, sz, dllName, sz-1);
+     __TBB_ASSERT(!ret, "Dll name conversion failed");
+ #endif
+ 
+     for (size_t i=0; i<arrayLength(modules_to_replace); i++)
+-        if (!strcmp(modules_to_replace[i].name, dllStr)) {
++        if (!__TBB_strcmp(modules_to_replace[i].name, reinterpret_cast<const tbb::tchar*>(dllStr))) {
+             modules_to_replace[i].doFuncReplacement = false;
+             break;
+         }
+@@ -704,7 +763,7 @@ void ReplaceFunctionWithStore( const unicode_char_t *dllName, const char *funcNa
+     if (res == FRR_OK || res == FRR_NODLL || (res == FRR_NOFUNC && on_error == FRR_IGNORE))
+         return;
+ 
+-    fprintf(stderr, "Failed to %s function %s in module %s\n",
++    fprintf(stderr, "Failed to %s function %s in module " WCHAR_SPEC "\n",
+             res==FRR_NOFUNC? "find" : "replace", funcName, dllName);
+ 
+     // Unable to replace a required function
+@@ -735,18 +794,18 @@ void doMallocReplacement()
+         {
+             ReplaceFunctionWithStore( modules_to_replace[j].name, c_routines_to_replace[i]._func, c_routines_to_replace[i]._fptr, nullptr, nullptr,  c_routines_to_replace[i]._on_error );
+         }
+-        if ( strcmp(modules_to_replace[j].name, "ucrtbase.dll") == 0 ) {
+-            HMODULE ucrtbase_handle = GetModuleHandle("ucrtbase.dll");
++        if (__TBB_strcmp(modules_to_replace[j].name, __TBB_T("ucrtbase.dll")) == 0 ) {
++            HMODULE ucrtbase_handle = GetModuleHandle(__TBB_T("ucrtbase.dll"));
+             if (!ucrtbase_handle)
+                 continue;
+             // If _o_free function is present and patchable, redirect it to tbbmalloc as well
+             // This prevents issues with other _o_* functions which might allocate memory with malloc
+-            if ( IsPrologueKnown("ucrtbase.dll", "_o_free", known_bytecodes, ucrtbase_handle)) {
+-                ReplaceFunctionWithStore( "ucrtbase.dll", "_o_free", (FUNCPTR)__TBB_malloc__o_free, known_bytecodes, (FUNCPTR*)&orig__o_free,  FRR_FAIL );
++            if ( IsPrologueKnown(__TBB_T("ucrtbase.dll"), "_o_free", known_bytecodes, ucrtbase_handle)) {
++                ReplaceFunctionWithStore(__TBB_T("ucrtbase.dll"), "_o_free", (FUNCPTR)__TBB_malloc__o_free, known_bytecodes, (FUNCPTR*)&orig__o_free,  FRR_FAIL );
+             }
+             // Similarly for _free_base
+-            if (IsPrologueKnown("ucrtbase.dll", "_free_base", known_bytecodes, ucrtbase_handle)) {
+-                ReplaceFunctionWithStore("ucrtbase.dll", "_free_base", (FUNCPTR)__TBB_malloc__free_base, known_bytecodes, (FUNCPTR*)&orig__free_base, FRR_FAIL);
++            if (IsPrologueKnown(__TBB_T("ucrtbase.dll"), "_free_base", known_bytecodes, ucrtbase_handle)) {
++                ReplaceFunctionWithStore(__TBB_T("ucrtbase.dll"), "_free_base", (FUNCPTR)__TBB_malloc__free_base, known_bytecodes, (FUNCPTR*)&orig__free_base, FRR_FAIL);
+             }
+             // ucrtbase.dll does not export operator new/delete, so skip the rest of the loop.
+             continue;
