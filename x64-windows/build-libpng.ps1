@@ -1,39 +1,38 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # project: buildtools
-# file: x64-windows/build-lz4.ps1
-# created: 2026-03-01
-# lastModified: 2026-05-03
+# file: x64-windows/build-libpng.ps1
+# created: 2026-05-03
+# lastModified: 2026-05-04
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
     [string]$workspacePath = $null,
 
-    [Parameter(HelpMessage = "lz4 git repo url", Mandatory = $false)]
-    [string]$gitUrl = "https://github.com/lz4/lz4.git",
+    [Parameter(HelpMessage = "libpng git repo url", Mandatory = $false)]
+    [string]$gitUrl = "https://github.com/pnggroup/libpng.git",
     
-    [Parameter(HelpMessage = "lz4 git branch to sync from", Mandatory = $false)]
-    [string]$gitBranch = "dev",
+    [Parameter(HelpMessage = "libpng git branch to sync from", Mandatory = $false)]
+    [string]$gitBranch = "libpng18",
 
-    [Parameter(HelpMessage = "Path for lz4 library storage", Mandatory = $false)]
-    [string]$lz4InstallDir = "$env:LIBRARIES_PATH\lz4",
+    [Parameter(HelpMessage = "Path for libpng library storage", Mandatory = $false)]
+    [string]$libpngInstallDir = "$env:LIBRARIES_PATH\libpng",
     
-    [Parameter(HelpMessage = "Lib name, if it's building with a different name (fixit by changing it's default name beforehand)", Mandatory = $false)]
-    [string]$lz4LibName = "lz4",
+    [Parameter(HelpMessage = "Lib name, if it's building with a different name", Mandatory = $false)]
+    [string]$libpngLibName = "libpng",
     
-    [Parameter(HelpMessage = "Force a full purge of the local lz4 version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Force a full purge of the local libpng version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
     
-    [Parameter(HelpMessage = "Add's lz4 Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
+    [Parameter(HelpMessage = "Add's libpng Machine Environment Variables.", Mandatory = $false)]
     [switch]$withMachineEnvironment
 )
 
-# Capture parameters
-$lz4WorkspacePath = $workspacePath
-$lz4GitUrl = $gitUrl
-$lz4GitBranch = $gitBranch
-$lz4ForceCleanup = $forceCleanup
-$lz4WithMachineEnvironment = $withMachineEnvironment
+$libpngWorkspacePath = $workspacePath
+$libpngGitUrl = $gitUrl
+$libpngGitBranch = $gitBranch
+$libpngForceCleanup = $forceCleanup
+$libpngWithMachineEnvironment = $withMachineEnvironment
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
@@ -106,41 +105,62 @@ if ([string]::IsNullOrWhitespace($env:BINARY_CLANG) -or -not (Test-Path $env:BIN
     }
 }
 
-$RootPath = if ([string]::IsNullOrWhitespace($lz4WorkspacePath)) { Get-Location } else { $lz4WorkspacePath }
+# --- Dependencies: ---
+$RootlibpngInstallDir = Split-Path -Path $libpngInstallDir -Parent
+$RootlibpngWorkspacePath = if ([string]::IsNullOrWhitespace($libpngWorkspacePath)) { Get-Location } else { $libpngWorkspacePath }
+
+# Load Zlib requirement
+if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_ZLIB) -or -not (Test-Path $env:SHARED_LIB_ZLIB)) {
+    $zlibEnvScript = Join-Path $EnvironmentDir "env-zlib.ps1"
+    if (Test-Path $zlibEnvScript) { . $zlibEnvScript }
+    if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_ZLIB) -or -not (Test-Path $env:SHARED_LIB_ZLIB)) {
+        $zlibBuildScript = Join-Path $PSScriptRoot "build-zlib.ps1"
+        if (Test-Path $zlibBuildScript) {
+            $zlibInstallDir = Join-Path $RootlibpngInstallDir "zlib"
+            . $zlibBuildScript -workspacePath $RootlibpngWorkspacePath -zlibInstallDir $zlibInstallDir
+        }
+        else {
+            Write-Error "CRITICAL: Cannot build zlib. zlib is missing and $zlibBuildScript was not found."
+            return
+        }
+    }
+}
+
+$RootPath = if ([string]::IsNullOrWhitespace($RootlibpngWorkspacePath)) { Get-Location } else { $RootlibpngWorkspacePath }
 
 # --- 6. Path Resolution ---
 Push-Location $RootPath
 
-$Source         = Join-Path $RootPath "lz4"
+$Source         = Join-Path $RootPath "libpng"
 $BuildDirShared = Join-Path $Source "build_shared"
 $BuildDirStatic = Join-Path $Source "build_static"
-$RepoUrl        = $lz4GitUrl
-$Branch         = $lz4GitBranch
-$CMakeSource    = Join-Path $Source "build/cmake"
+$RepoUrl        = $libpngGitUrl
+$Branch         = $libpngGitBranch
+$CMakeSource    = $Source
 $tag_name       = $Branch
 $url            = $RepoUrl
 
-$lz4EnvScript = Join-Path $EnvironmentDir "env-lz4.ps1"
-$lz4MachineEnvScript = Join-Path $EnvironmentDir "machine-env-lz4.ps1"
+$libpngEnvScript = Join-Path $EnvironmentDir "env-libpng.ps1"
+$libpngMachineEnvScript = Join-Path $EnvironmentDir "machine-env-libpng.ps1"
 
 # --- 1. Cleanup Mechanism ---
-function Invoke-lz4VersionPurge {
+function Invoke-libpngVersionPurge {
     param ([string]$InstallPath)
-    Write-Host "--- Initiating lz4 Purge ---" -ForegroundColor Cyan
+    Write-Host "--- Initiating libpng Purge ---" -ForegroundColor Cyan
 
-    if ($lz4WithMachineEnvironment) {
-        $lz4CleanMachineEnvScript = Join-Path $env:TEMP "clean-machine-env-lz4.ps1"
+    if ($libpngWithMachineEnvironment) {
+        $libpngCleanMachineEnvScript = Join-Path $env:TEMP "clean-machine-env-libpng.ps1"
 
         # Generating Clean Machine Environment wich removes the persist registry machine Environment
         $CleanMachineEnvContent = @'
-# lz4 Clean Machine Environment Setup
+# libpng Clean Machine Environment Setup
 
 # --- 0. Self-Elevation Logic ---
 $IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 $ScopeColor = "Cyan"
 
 if (-not $IsAdmin) {
-    Write-Host "Elevation required to clean lz4 system variables. Relaunching as Administrator..." -ForegroundColor Yellow
+    Write-Host "Elevation required to clean libpng system variables. Relaunching as Administrator..." -ForegroundColor Yellow
     # Pass the parameters to the elevated process so they aren't lost
     $Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
     foreach ($Parameter in $PSBoundParameters.GetEnumerator()) {
@@ -162,7 +182,7 @@ if (-not $IsAdmin) {
     exit
 }
 
-$lz4root = "VALUE_ROOT_PATH"
+$libpngroot = "VALUE_ROOT_PATH"
 
 $TargetScope = if ($IsAdmin) { "Machine" } else { "User" }
 $RegPath = if ($IsAdmin) { "System\CurrentControlSet\Control\Session Manager\Environment" } else { "Environment" }
@@ -174,8 +194,8 @@ $RegKey = [Microsoft.Win32.Registry]::$RegRoot.OpenSubKey($RegPath, $true)
 # Open the registry key directly to read the RAW (unexpanded) string
 $RawPath = $RegKey.GetValue("EXTCOMPLIBS_PATH", "", [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
 
-# Cleanup: Remove empty strings, any path containing $lz4root,
-$CleanPath = ($RawPath -split ';' | Where-Object { $_ -notlike "*$lz4root*" }) -join ";"
+# Cleanup: Remove empty strings, any path containing $libpngroot,
+$CleanPath = ($RawPath -split ';' | Where-Object { $_ -notlike "*$libpngroot*" }) -join ";"
 
 # Save as ExpandString
 $RegKey.SetValue("EXTCOMPLIBS_PATH", $CleanPath, [Microsoft.Win32.RegistryValueKind]::ExpandString)
@@ -183,20 +203,20 @@ $env:EXTCOMPLIBS_PATH = $CleanPath
 
 $RegKey.Close()
 
-Write-Host "[REMOVED] ($TargetScope) all '*$lz4root*' removed from EXTCOMPLIBS_PATH" -ForegroundColor $ScopeColor
+Write-Host "[REMOVED] ($TargetScope) all '*$libpngroot*' removed from EXTCOMPLIBS_PATH" -ForegroundColor $ScopeColor
 '@  -replace "VALUE_ROOT_PATH", $InstallPath
 
-        $CleanMachineEnvContent | Out-File -FilePath $lz4CleanMachineEnvScript -Encoding utf8
-        Write-Host "Created: $lz4CleanMachineEnvScript" -ForegroundColor Gray
+        $CleanMachineEnvContent | Out-File -FilePath $libpngCleanMachineEnvScript -Encoding utf8
+        Write-Host "Created: $libpngCleanMachineEnvScript" -ForegroundColor Gray
         
         # --- Interaction: Prompt to remove persistent changes ---
         Write-Host ""
-        $choice = Read-Host "Administrator rights required to Clean Machine Environment lz4 changes? (y/n)"
+        $choice = Read-Host "Administrator rights required to Clean Machine Environment libpng changes? (y/n)"
         if ($choice -eq 'y' -or $choice -eq 'Y') {
-            Write-Host "Executing $lz4CleanMachineEnvScript..." -ForegroundColor Yellow
+            Write-Host "Executing $libpngCleanMachineEnvScript..." -ForegroundColor Yellow
             try {
                 # Start the generated script. It handles its own elevation logic.
-                & $lz4CleanMachineEnvScript
+                & $libpngCleanMachineEnvScript
             }
             catch {
                 Write-Error "Failed to execute the Clean Machine Environment script: $($_.Exception.Message)"
@@ -204,23 +224,23 @@ Write-Host "[REMOVED] ($TargetScope) all '*$lz4root*' removed from EXTCOMPLIBS_P
             }
         }
         else {
-            Write-Error "Skipped Clean Machine Environment lz4 changes."
+            Write-Error "Skipped Clean Machine Environment libpng changes."
             Pop-Location; return
         }
 
         # Cleanup
-        Remove-Item $lz4CleanMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item $libpngCleanMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     # 2. Filesystem Clean (Requires checking for locked files)
     # delete everithing we create don't fail later
-    if (Test-Path $lz4EnvScript) {
-        Write-Host "  [DELETING] $lz4EnvScript" -ForegroundColor Yellow
-        Remove-Item $lz4EnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path $libpngEnvScript) {
+        Write-Host "  [DELETING] $libpngEnvScript" -ForegroundColor Yellow
+        Remove-Item $libpngEnvScript -Recurse -Force -ErrorAction SilentlyContinue
     }
-    if (Test-Path $lz4MachineEnvScript) {
-        Write-Host "  [DELETING] $lz4MachineEnvScript" -ForegroundColor Yellow
-        Remove-Item $lz4MachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path $libpngMachineEnvScript) {
+        Write-Host "  [DELETING] $libpngMachineEnvScript" -ForegroundColor Yellow
+        Remove-Item $libpngMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
     }
     if (Test-Path $InstallPath) {
         Write-Host "  [DELETING] $InstallPath" -ForegroundColor Yellow
@@ -232,10 +252,10 @@ Write-Host "[REMOVED] ($TargetScope) all '*$lz4root*' removed from EXTCOMPLIBS_P
     }
     
     # remove local Env variables for current session
-    Get-ChildItem Env:\LZ4_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
-    Get-ChildItem Env:\BINARY_LIB_LZ4* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
-    Get-ChildItem Env:\SHARED_LIB_LZ4* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
-    Get-ChildItem Env:\STATIC_LIB_LZ4* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\LIBPNG_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_LIB_PNG* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\SHARED_LIB_PNG* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\STATIC_LIB_PNG* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
     
     $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
     $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 
@@ -273,16 +293,15 @@ Write-Host "[REMOVED] ($TargetScope) all '*$lz4root*' removed from EXTCOMPLIBS_P
     $NewPath = ($NewPath + ";").Replace(";;", ";")
     $env:PATH = $NewPath
     
-    Write-Host "--- LZ4 Purge Complete ---" -ForegroundColor Green
+    Write-Host "--- LIBPNG Purge Complete ---" -ForegroundColor Green
 }
 
-if ($lz4ForceCleanup) {
-    Invoke-lz4VersionPurge -InstallPath $lz4InstallDir
+if ($libpngForceCleanup) {
+    Invoke-libpngVersionPurge -InstallPath $libpngInstallDir
 }
 
-# --- 7. Source Management ---
 if (Test-Path $Source) {
-    Write-Host "Syncing lz4 ($Branch) at $Source..." -ForegroundColor Cyan
+    Write-Host "Syncing libpng ($Branch) at $Source..." -ForegroundColor Cyan
     Set-Location $Source
     git fetch --all
     if ($LASTEXITCODE -ne 0) { Write-Error "Git fetch failed."; Pop-Location; return }
@@ -291,8 +310,9 @@ if (Test-Path $Source) {
     git pull --recurse-submodules --force
     if ($LASTEXITCODE -ne 0) { Write-Error "Git pull failed."; Pop-Location; return }
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
-} else {
-    Write-Host "Cloning lz4 ($Branch) into $Source..." -ForegroundColor Cyan
+}
+else {
+    Write-Host "Cloning libpng ($Branch) into $Source..." -ForegroundColor Cyan
     git clone --recurse-submodules $RepoUrl $Source -b $Branch
     if ($LASTEXITCODE -ne 0) { Write-Error "Git clone failed."; Pop-Location; return }
     Set-Location $Source
@@ -300,13 +320,13 @@ if (Test-Path $Source) {
 }
 
 # --- 8. Clean Final Destination ---
-if (Test-Path $lz4InstallDir) {
+if (Test-Path $libpngInstallDir) {
     Write-Host "Wiping existing installation..." -ForegroundColor Yellow
-    Remove-Item $lz4InstallDir -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item $libpngInstallDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-Write-Host "[INSTALL] Creating fresh directory: $lz4InstallDir" -ForegroundColor Cyan
-New-Item -Path $lz4InstallDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
+Write-Host "[INSTALL] Creating fresh directory: $libpngInstallDir" -ForegroundColor Cyan
+New-Item -Path $libpngInstallDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
 
 # Ensure fresh build directory
 if (Test-Path $BuildDirShared) { Remove-Item $BuildDirShared -Recurse -Force -ErrorAction SilentlyContinue }
@@ -314,7 +334,6 @@ if (Test-Path $BuildDirStatic) { Remove-Item $BuildDirStatic -Recurse -Force -Er
 New-Item -Path $BuildDirShared -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
 New-Item -Path $BuildDirStatic -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
 
-# Common CMake Flags 
 $CommonCmakeArgs = @(
     "-G", "Ninja",
     "-DCMAKE_POLICY_DEFAULT_CMP0091=NEW",
@@ -322,105 +341,106 @@ $CommonCmakeArgs = @(
     "-DCMAKE_C_COMPILER=clang",
     "-DCMAKE_CXX_COMPILER=clang++",
     "-DCMAKE_BUILD_TYPE=Release",
-    "-DLZ4_BUILD_CLI=OFF",
-    "-DLZ4_BUNDLED_MODE=OFF"
+    "-DPNG_TESTS=OFF",
+    "-DPNG_TOOLS=OFF",
+    "-DPNG_EXECUTABLES=OFF",
+    "-DPNG_HARDWARE_OPTIMIZATIONS=ON",
+    "-DZLIB_ROOT=$($env:ZLIB_ROOT -replace '\\', '/')"
 )
 
-# --- 9. STAGE 1: Build Static Libraries ---
-Write-Host "Building Static (lz4_static.lib)..." -ForegroundColor Cyan
+# --- STAGE 1: Build Static Libraries ---
+Write-Host "Building Static..." -ForegroundColor Cyan
 cmake $CommonCmakeArgs `
     -S "$CMakeSource" `
     -B "$BuildDirStatic" `
-    -DCMAKE_INSTALL_PREFIX="$lz4InstallDir" `
-    -DBUILD_SHARED_LIBS=OFF `
-    -DBUILD_STATIC_LIBS=ON `
+    -DCMAKE_INSTALL_PREFIX="$libpngInstallDir" `
+    -DPNG_SHARED=OFF `
+    -DPNG_STATIC=ON `
     -DCMAKE_C_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
     -DCMAKE_CXX_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
     --no-warn-unused-cli
     
-if ($LASTEXITCODE -ne 0) { Write-Error "lz4 CMake Static (lz4_static.lib) configuration failed."; Pop-Location; return }
+if ($LASTEXITCODE -ne 0) { Write-Error "libpng CMake Static configuration failed."; Pop-Location; return }
 
-Write-Host "Building and Installing static lib to $lz4InstallDir..." -ForegroundColor Green
+Write-Host "Building and Installing static lib to $libpngInstallDir..." -ForegroundColor Green
 cmake --build "$BuildDirStatic" --target install --config Release --parallel
 
-if ($LASTEXITCODE -ne 0) { Write-Error "lz4 Static Build failed with exit code $LASTEXITCODE"; Pop-Location; return }
+if ($LASTEXITCODE -ne 0) { Write-Error "libpng Static Build failed with exit code $LASTEXITCODE"; Pop-Location; return }
 
-# Rename static lib to lz4_static.lib to avoid collision
-$StaticLibPath = Join-Path $lz4InstallDir "lib/lz4.lib"
-$NewStaticName = Join-Path $lz4InstallDir "lib/lz4_static.lib"
-if (Test-Path $StaticLibPath) {
-    Move-Item -Path $StaticLibPath -Destination $NewStaticName -Force -ErrorAction SilentlyContinue
-    Write-Host "Static library renamed to lz4_static.lib" -ForegroundColor Gray
+# Rename static lib to libpng_static.lib to avoid collision
+Write-Host "Applying '_static' suffix to static libs..." -ForegroundColor Gray
+Get-ChildItem -Path "$libpngInstallDir\lib\*.lib" | ForEach-Object {
+    if ($_.BaseName -notmatch "_static") {
+        $newName = ($_.BaseName -replace '(?i)-?static$', '') + "_static" + $_.Extension
+        Move-Item -Path $_.FullName -Destination (Join-Path $_.DirectoryName $newName) -Force -ErrorAction SilentlyContinue
+        Write-Host "  -> $newName" -ForegroundColor DarkGray
+    }
 }
 
-# --- 10. STAGE 2: Build Shared Libraries ---
+# --- STAGE 2: Build Shared Libraries ---
 Write-Host "Building Shared (DLL)..." -ForegroundColor Cyan
 cmake $CommonCmakeArgs `
     -S "$CMakeSource" `
     -B "$BuildDirShared" `
-    -DCMAKE_INSTALL_PREFIX="$lz4InstallDir" `
-    -DBUILD_SHARED_LIBS=ON `
-    -DBUILD_STATIC_LIBS=OFF `
+    -DCMAKE_INSTALL_PREFIX="$libpngInstallDir" `
+    -DPNG_SHARED=ON `
+    -DPNG_STATIC=OFF `
     -DCMAKE_C_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
     -DCMAKE_CXX_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
     --no-warn-unused-cli
     
-if ($LASTEXITCODE -ne 0) { Write-Error "lz4 CMake Shared (DLL) configuration failed."; Pop-Location; return }
+if ($LASTEXITCODE -ne 0) { Write-Error "libpng CMake Shared (DLL) configuration failed."; Pop-Location; return }
 
-Write-Host "Building and Installing dynamic lib to $lz4InstallDir..." -ForegroundColor Green
+Write-Host "Building and Installing dynamic lib to $libpngInstallDir..." -ForegroundColor Green
 cmake --build "$BuildDirShared" --target install --config Release --parallel
 
-if ($LASTEXITCODE -ne 0) { Write-Error "lz4 Shared Build failed with exit code $LASTEXITCODE"; Pop-Location; return }
+if ($LASTEXITCODE -ne 0) { Write-Error "libpng Shared Build failed with exit code $LASTEXITCODE"; Pop-Location; return }
 
-Write-Host "Successfully built and installed lz4 to $lz4InstallDir!" -ForegroundColor Green
+Write-Host "Successfully built and installed libpng to $libpngInstallDir!" -ForegroundColor Green
 
 # Cleanup temporary build debris
 Remove-Item $BuildDirShared -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item $BuildDirStatic -Recurse -Force -ErrorAction SilentlyContinue
 
 # Generate Environment Helper with Clean Paths
-$lz4InstallDir = $lz4InstallDir.TrimEnd('\')
-$lz4IncludeDir = Join-Path $lz4InstallDir "include"
-$lz4LibDir = Join-Path $lz4InstallDir "lib"
-$lz4BinPath = Join-Path $lz4InstallDir "bin"
-$lz4CMakePath = $lz4InstallDir.Replace('\', '/')
+$libpngInstallDir = $libpngInstallDir.TrimEnd('\')
+$libpngIncludeDir = Join-Path $libpngInstallDir "include"
+$libpngLibDir = Join-Path $libpngInstallDir "lib"
+$libpngBinPath = Join-Path $libpngInstallDir "bin"
+$libpngCMakePath = $libpngInstallDir.Replace('\', '/')
 
-$StaticLib = Join-Path $lz4LibDir ("$lz4LibName" + "static.lib")
-$SharedLib = Join-Path $lz4LibDir "$lz4LibName.lib"
-$BinaryLib = Join-Path $lz4BinPath "$lz4LibName.dll"
-$versionFile = Join-Path $lz4InstallDir "version.json"
+$StaticLib = Join-Path $libpngLibDir ("$libpngLibName" + "_static.lib")
+$SharedLib = Join-Path $libpngLibDir "$libpngLibName.lib"
+$BinaryLib = Join-Path $libpngBinPath "$libpngLibName.dll"
+$versionFile = Join-Path $libpngInstallDir "version.json"
 
-# Fallback check for "lz4.lib" / "lz4s.lib" naming convention
-if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $lz4LibDir ("$lz4LibName" + "_static.lib") }
-#if (-not (Test-Path $SharedLib)) { $SharedLib = Join-Path $lz4LibDir "lz4.lib" }
-#if (-not (Test-Path $BinaryLib)) { $BinaryLib = Join-Path $lz4BinPath "lz4.dll" }
+$cmakeFile = Join-Path $Source "CMakeLists.txt"
+$localVersion = "0.0.0"
+$rawVersion = $Branch
+$binaryversion = "0"
+    
+if (Test-Path $cmakeFile) {
+    $cmakeContent = Get-Content $cmakeFile -Raw
+    $majorMatch = [regex]::Match($cmakeContent, '(?i)set\s*\(\s*PNGLIB_MAJOR\s+(\d+)\s*\)')
+    $minorMatch = [regex]::Match($cmakeContent, '(?i)set\s*\(\s*PNGLIB_MINOR\s+(\d+)\s*\)')
+    $relMatch = [regex]::Match($cmakeContent, '(?i)set\s*\(\s*PNGLIB_REVISION\s+(\d+)\s*\)')
+        
+    if ($majorMatch.Success -and $minorMatch.Success -and $relMatch.Success) {
+        $localVersion = "$($majorMatch.Groups[1].Value).$($minorMatch.Groups[1].Value).$($relMatch.Groups[1].Value)"
+        $rawVersion = $localVersion
+        $binaryversion = "$($majorMatch.Groups[1].Value)$($minorMatch.Groups[1].Value)"
+        Write-Host "[VERSION] Detected libpng: $localVersion" -ForegroundColor Cyan
+    }
+}
+
+if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $libpngLibDir ("$libpngLibName" + "$binaryversion" + "_static.lib") }
+if (-not (Test-Path $SharedLib)) { $SharedLib = Join-Path $libpngLibDir ("$libpngLibName" + "$binaryversion" + ".lib") }
+if (-not (Test-Path $BinaryLib)) { $BinaryLib = Join-Path $libpngBinPath ("$libpngLibName" + "$binaryversion" + ".dll") }
 
 if ((Test-Path $StaticLib) -or (Test-Path $SharedLib) -or (Test-Path $BinaryLib)) {
-    $lz4Header = Join-Path $lz4IncludeDir "lz4.h"
-    if (-not (Test-Path $lz4Header)) { $lz4Header = Join-Path $Source "lib\lz4.h" }
-    $localVersion = "0.0.0"
-    $rawVersion = $Branch
-    $binaryversion = "0"
-    
-    if (Test-Path $lz4Header) {
-        # Extract version from #define #define LZ4_VERSION_MAJOR  #define LZ4_VERSION_MINOR #define LZ4_VERSION_RELEASE
-        $headerContent = Get-Content $lz4Header
-        
-        # Extract Major, Minor, and Release versions
-        $major = ($headerContent | Select-String '#define\s+LZ4_VERSION_MAJOR\s+(\d+)').Matches.Groups[1].Value
-        $minor = ($headerContent | Select-String '#define\s+LZ4_VERSION_MINOR\s+(\d+)').Matches.Groups[1].Value
-        $rel = ($headerContent | Select-String '#define\s+LZ4_VERSION_RELEASE\s+(\d+)').Matches.Groups[1].Value
 
-        if ($major -and $minor -and $rel) {
-            $localVersion = "$major.$minor.$rel"
-            $rawVersion = $localVersion
-            $binaryversion = ([version]$localVersion).Major
-            Write-Host "[VERSION] Detected lz4: $localVersion" -ForegroundColor Cyan
-        }
-    }
-    
     # Save new version state
-    $lz4Version = $localVersion
+    $libpngVersion = $localVersion
     $versionInfo = @{
         url        = $url;
         tag_name   = $tag_name;
@@ -435,74 +455,73 @@ if ((Test-Path $StaticLib) -or (Test-Path $SharedLib) -or (Test-Path $BinaryLib)
     }
     $versionInfo | ConvertTo-Json | Out-File -FilePath $versionFile -Encoding utf8 -Force
     
-    # --- 11. Create Environment Helper ---
+    # --- 10. Create Environment Helper ---
     Write-Host "Generating environment helper script..." -ForegroundColor Cyan
     $EnvContent = @'
-# LZ4 Environment Setup
-$lz4root = "VALUE_ROOT_PATH"
-$lz4include = "VALUE_INCLUDE_PATH"
-$lz4library = "VALUE_LIB_PATH"
-$lz4bin = "VALUE_BIN_PATH"
-$lz4version = "VALUE_VERSION"
-$lz4abiversion = "VALUE_ABI_VERSION"
-$lz4soversion = "VALUE_SO_VERSION"
-$lz4binary = "VALUE_BINARY"
-$lz4shared = "VALUE_SHARED"
-$lz4static = "VALUE_STATIC"
-$lz4libname = "VALUE_LIB_NAME"
-$lz4cmakepath = "VALUE_CMAKE_PATH"
-$env:LZ4_PATH = $lz4root
-$env:LZ4_ROOT = $lz4root
-$env:LZ4_BIN = $lz4bin
-$env:LZ4_INCLUDE_DIR = $lz4include
-$env:LZ4_LIBRARY_DIR = $lz4library
-$env:BINARY_LIB_LZ4 = $lz4binary
-$env:SHARED_LIB_LZ4 = $lz4shared
-$env:STATIC_LIB_LZ4 = $lz4static
-$env:LZ4_LIB_NAME = $lz4libname
-$env:LZ4_VERSION = $lz4version
-$env:LZ4_MAJOR = ([version]$lz4version).Major
-$env:LZ4_MINOR = ([version]$lz4version).Minor
-$env:LZ4_PATCH = ([version]$lz4version).Patch
-$env:LZ4_ABI_VERSION = $lz4abiversion
-$env:LZ4_SO_VERSION = $lz4soversion
-if ($env:CMAKE_PREFIX_PATH -notlike "*$lz4cmakepath*") { $env:CMAKE_PREFIX_PATH = $lz4cmakepath + ";" + $env:CMAKE_PREFIX_PATH; $env:CMAKE_PREFIX_PATH = ($env:CMAKE_PREFIX_PATH).Replace(";;", ";") }
-if ($env:INCLUDE -notlike "*$lz4include*") { $env:INCLUDE = $lz4include + ";" + $env:INCLUDE; $env:INCLUDE = ($env:INCLUDE).Replace(";;", ";") }
-if ($env:LIB -notlike "*$lz4library*") { $env:LIB = $lz4library + ";" + $env:LIB; $env:LIB = ($env:LIB).Replace(";;", ";") }
-if ($env:PATH -notlike "*$lz4bin*") { $env:PATH = $lz4bin + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") }
-Write-Host "lz4 Environment Loaded (Version: $lz4version) (Bin: $lz4bin)" -ForegroundColor Green
-Write-Host "LZ4_ROOT: $env:LZ4_ROOT" -ForegroundColor Gray
-'@  -replace "VALUE_ROOT_PATH", $lz4InstallDir `
-    -replace "VALUE_INCLUDE_PATH", $lz4IncludeDir `
-    -replace "VALUE_LIB_PATH", $lz4LibDir `
-    -replace "VALUE_BIN_PATH", $lz4BinPath `
-    -replace "VALUE_VERSION", $lz4Version `
+# LIBPNG Environment Setup
+$libpngroot = "VALUE_ROOT_PATH"
+$libpnginclude = "VALUE_INCLUDE_PATH"
+$libpnglibrary = "VALUE_LIB_PATH"
+$libpngbin = "VALUE_BIN_PATH"
+$libpngversion = "VALUE_VERSION"
+$libpngabiversion = "VALUE_ABI_VERSION"
+$libpngsoversion = "VALUE_SO_VERSION"
+$libpngbinary = "VALUE_BINARY"
+$libpngshared = "VALUE_SHARED"
+$libpngstatic = "VALUE_STATIC"
+$libpnglibname = "VALUE_LIB_NAME"
+$libpngcmakepath = "VALUE_CMAKE_PATH"
+$env:LIBPNG_PATH = $libpngroot
+$env:LIBPNG_ROOT = $libpngroot
+$env:LIBPNG_BIN = $libpngbin
+$env:LIBPNG_INCLUDE_DIR = $libpnginclude
+$env:LIBPNG_LIBRARY_DIR = $libpnglibrary
+$env:BINARY_LIB_PNG = $libpngbinary
+$env:SHARED_LIB_PNG = $libpngshared
+$env:STATIC_LIB_PNG = $libpngstatic
+$env:LIBPNG_LIB_NAME = $libpnglibname
+$env:LIBPNG_VERSION = $libpngversion
+$env:LIBPNG_MAJOR = ([version]$libpngversion).Major
+$env:LIBPNG_MINOR = ([version]$libpngversion).Minor
+$env:LIBPNG_PATCH = ([version]$libpngversion).Patch
+$env:LIBPNG_ABI_VERSION = $libpngabiversion
+$env:LIBPNG_SO_VERSION = $libpngsoversion
+if ($env:CMAKE_PREFIX_PATH -notlike "*$libpngcmakepath*") { $env:CMAKE_PREFIX_PATH = $libpngcmakepath + ";" + $env:CMAKE_PREFIX_PATH; $env:CMAKE_PREFIX_PATH = ($env:CMAKE_PREFIX_PATH).Replace(";;", ";") }
+if ($env:INCLUDE -notlike "*$libpnginclude*") { $env:INCLUDE = $libpnginclude + ";" + $env:INCLUDE; $env:INCLUDE = ($env:INCLUDE).Replace(";;", ";") }
+if ($env:LIB -notlike "*$libpnglibrary*") { $env:LIB = $libpnglibrary + ";" + $env:LIB; $env:LIB = ($env:LIB).Replace(";;", ";") }
+if ($env:PATH -notlike "*$libpngbin*") { $env:PATH = $libpngbin + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") }
+Write-Host "libpng Environment Loaded (Version: $libpngversion) (Bin: $libpngbin)" -ForegroundColor Green
+Write-Host "LIBPNG_ROOT: $env:LIBPNG_ROOT" -ForegroundColor Gray
+'@  -replace "VALUE_ROOT_PATH", $libpngInstallDir `
+    -replace "VALUE_INCLUDE_PATH", $libpngIncludeDir `
+    -replace "VALUE_LIB_PATH", $libpngLibDir `
+    -replace "VALUE_BIN_PATH", $libpngBinPath `
+    -replace "VALUE_VERSION", $libpngVersion `
+    -replace "VALUE_ABI_VERSION", $binaryversion `
+    -replace "VALUE_SO_VERSION", $binaryversion `
     -replace "VALUE_SHARED", $SharedLib `
     -replace "VALUE_BINARY", $BinaryLib `
     -replace "VALUE_STATIC", $StaticLib `
-    -replace "VALUE_CMAKE_PATH", $lz4CMakePath
+    -replace "VALUE_LIB_NAME", $libpngLibName `
+    -replace "VALUE_CMAKE_PATH", $libpngCMakePath
 
-    $EnvContent | Out-File -FilePath $lz4EnvScript -Encoding utf8
-    Write-Host "Created: $lz4EnvScript" -ForegroundColor Gray
-    
-    # Update Current Session
-    if (Test-Path $lz4EnvScript) { . $lz4EnvScript } else {
-        Write-Error "lz4 build install finished but $lz4EnvScript was not created."
+    $EnvContent | Out-File -FilePath $libpngEnvScript -Encoding utf8
+    Write-Host "Created: $libpngEnvScript" -ForegroundColor Gray
+
+    if (Test-Path $libpngEnvScript) { . $libpngEnvScript } else {
+        Write-Error "libpng build install finished but $libpngEnvScript was not created."
         Pop-Location; return
     }
     
-    if ($lz4WithMachineEnvironment)
+    if ($libpngWithMachineEnvironment)
     {
-        # Generating Machine Environment wich add to the persist registry machine Environment
         $MachineEnvContent = @'
-# lz4 Machine Environment Setup
-
-# --- 0. Self-Elevation Logic ---
+# libpng Machine Environment Setup
 $IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 $ScopeColor = "Cyan"
 
 if (-not $IsAdmin) {
-    Write-Host "Elevation required to set lz4 system variables. Relaunching as Administrator..." -ForegroundColor Yellow
+    Write-Host "Elevation required to set libpng system variables. Relaunching as Administrator..." -ForegroundColor Yellow
     # Pass the parameters to the elevated process so they aren't lost
     $Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
     foreach ($Parameter in $PSBoundParameters.GetEnumerator()) {
@@ -524,9 +543,9 @@ if (-not $IsAdmin) {
     exit
 }
 
-$lz4root = "VALUE_ROOT_PATH"
-$lz4bin = "VALUE_BIN_PATH"
-$lz4version = "VALUE_VERSION"
+$libpngroot = "VALUE_ROOT_PATH"
+$libpngbin = "VALUE_BIN_PATH"
+$libpngversion = "VALUE_VERSION"
 
 $TargetScope = if ($IsAdmin) { "Machine" } else { "User" }
 $RegPath = if ($IsAdmin) { "System\CurrentControlSet\Control\Session Manager\Environment" } else { "Environment" }
@@ -538,19 +557,18 @@ $RegKey = [Microsoft.Win32.Registry]::$RegRoot.OpenSubKey($RegPath, $true)
 # Open the registry key directly to read the RAW (unexpanded) string
 $CurrentRawPath = $RegKey.GetValue("EXTCOMPLIBS_PATH", "", [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
 
-# Cleanup: Remove empty strings, any path containing $lz4root, and the current target (to avoid dups)
 $CleanedPathList = $CurrentRawPath -split ';' | Where-Object { 
     -not [string]::IsNullOrWhitespace($_) -and 
-    $_ -notlike "*$lz4root*"
+    $_ -notlike "*$libpngroot*"
 }
 
 $NewRawPath = ($CleanedPathList -join ";").Replace(";;", ";")
 
-$TargetPath = $lz4bin
+$TargetPath = $libpngbin
 
 # Rebuild
 $NewRawPath = ($NewRawPath + ";" + $TargetPath + ";").Replace(";;", ";")
-Write-Host "[UPDATED] ($TargetScope) '$lz4bin' synced in EXTCOMPLIBS_PATH" -ForegroundColor $ScopeColor
+Write-Host "[UPDATED] ($TargetScope) '$libpngbin' synced in EXTCOMPLIBS_PATH" -ForegroundColor $ScopeColor
 
 # Save as ExpandString
 $RegKey.SetValue("EXTCOMPLIBS_PATH", $NewRawPath, [Microsoft.Win32.RegistryValueKind]::ExpandString)
@@ -558,31 +576,31 @@ $env:EXTCOMPLIBS_PATH = $NewRawPath
 
 $RegKey.Close()
 
-$env:LZ4_ROOT = $lz4root
-Write-Host "lz4 Environment Loaded (Version: $lz4version) (Bin: $lz4bin)" -ForegroundColor Green
-Write-Host "LZ4_ROOT: $env:LZ4_ROOT" -ForegroundColor Gray
-'@  -replace "VALUE_ROOT_PATH", $lz4InstallDir `
-    -replace "VALUE_BIN_PATH", $lz4BinPath `
-    -replace "VALUE_VERSION", $lz4Version
+$env:LIBPNG_ROOT = $libpngroot
+Write-Host "libpng Environment Loaded (Version: $libpngversion) (Bin: $libpngbin)" -ForegroundColor Green
+Write-Host "LIBPNG_ROOT: $env:LIBPNG_ROOT" -ForegroundColor Gray
+'@  -replace "VALUE_ROOT_PATH", $libpngInstallDir `
+    -replace "VALUE_BIN_PATH", $libpngBinPath `
+    -replace "VALUE_VERSION", $libpngVersion
 
-        $MachineEnvContent | Out-File -FilePath $lz4MachineEnvScript -Encoding utf8
-        Write-Host "Created: $lz4MachineEnvScript" -ForegroundColor Gray
+        $MachineEnvContent | Out-File -FilePath $libpngMachineEnvScript -Encoding utf8
+        Write-Host "Created: $libpngMachineEnvScript" -ForegroundColor Gray
         
         # --- Interaction: Prompt to apply persistent changes ---
         Write-Host ""
-        $choice = Read-Host "Do you want to run the Machine Environment script now to persist lz4 changes to the Registry? (y/n)"
+        $choice = Read-Host "Do you want to run the Machine Environment script now to persist libpng changes to the Registry? (y/n)"
         if ($choice -eq 'y' -or $choice -eq 'Y') {
-            Write-Host "Executing $lz4MachineEnvScript..." -ForegroundColor Yellow
+            Write-Host "Executing $libpngMachineEnvScript..." -ForegroundColor Yellow
             try {
                 # Start the generated script. It handles its own elevation logic.
-                & $lz4MachineEnvScript
+                & $libpngMachineEnvScript
             }
             catch {
                 Write-Error "Failed to execute the Machine Environment script: $($_.Exception.Message)"
             }
         }
         else {
-            Write-Host "Skipped persistent registry update. You can run it later at: $lz4MachineEnvScript" -ForegroundColor Gray
+            Write-Host "Skipped persistent registry update. You can run it later at: $libpngMachineEnvScript" -ForegroundColor Gray
         }
     }
     
@@ -590,6 +608,6 @@ Write-Host "LZ4_ROOT: $env:LZ4_ROOT" -ForegroundColor Gray
     Pop-Location
     Write-Host "Successfully Done! and returned to: $(Get-Location)" -ForegroundColor DarkGreen
 } else {
-    Write-Error "lz4.lib was not found in the $lz4LibDir folder."
+    Write-Error "libpng library was not found in the $libpngLibDir folder."
     Pop-Location; return
 }

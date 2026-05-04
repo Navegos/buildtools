@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/build-pkgconf.ps1
 # created: 2026-04-12
-# lastModified: 2026-04-26
+# lastModified: 2026-05-03
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -39,9 +39,105 @@ if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env
 
 $EnvironmentDir = "$env:ENVIRONMENT_PATH"
 
+# --- 1. Initialize Visual Studio 2026 Dev Environment ---
+$DevShellBootstrapScript = Join-Path $PSScriptRoot "dev-shell.ps1"
+if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
+    Write-Error "Required dependency '$DevShellBootstrapScript' not found!"
+    return
+}
+
+# --- 2. Initialize git environment if missing ---
+if ([string]::IsNullOrWhitespace($env:BINARY_GIT) -or -not (Test-Path $env:BINARY_GIT)) {
+    $gitEnvScript = Join-Path $EnvironmentDir "env-git.ps1"
+    if (Test-Path $gitEnvScript) { . $gitEnvScript } 
+    if ([string]::IsNullOrWhitespace($env:BINARY_GIT) -or -not (Test-Path $env:BINARY_GIT)) {
+        $depgitEnvScript = Join-Path $PSScriptRoot "dep-git.ps1"
+        if (Test-Path $depgitEnvScript) { . $depgitEnvScript }
+        else {
+            Write-Error "CRITICAL: Cannot load Git environment. git is missing and $depgitEnvScript was not found."
+            return
+        }
+    }
+}
+
+# --- 3. Initialize cmake environment if missing ---
+if ([string]::IsNullOrWhitespace($env:BINARY_CMAKE) -or -not (Test-Path $env:BINARY_CMAKE)) {
+    $cmakeEnvScript = Join-Path $EnvironmentDir "env-cmake.ps1"
+    if (Test-Path $cmakeEnvScript) { . $cmakeEnvScript } 
+    if ([string]::IsNullOrWhitespace($env:BINARY_CMAKE) -or -not (Test-Path $env:BINARY_CMAKE)) {
+        $depcmakeEnvScript = Join-Path $PSScriptRoot "dep-cmake.ps1"
+        if (Test-Path $depcmakeEnvScript) { . $depcmakeEnvScript }
+        else {
+            Write-Error "CRITICAL: Cannot load CMake environment. cmake is missing and $depcmakeEnvScript was not found."
+            return
+        }
+    }
+}
+
+# --- 4. Initialize ninja environment if missing ---
+if ([string]::IsNullOrWhitespace($env:BINARY_NINJA) -or -not (Test-Path $env:BINARY_NINJA)) {
+    $ninjaEnvScript = Join-Path $EnvironmentDir "env-ninja.ps1"
+    if (Test-Path $ninjaEnvScript) { . $ninjaEnvScript }
+    if ([string]::IsNullOrWhitespace($env:BINARY_NINJA) -or -not (Test-Path $env:BINARY_NINJA)) {
+        $depninjaEnvScript = Join-Path $PSScriptRoot "dep-ninja.ps1"
+        if (Test-Path $depninjaEnvScript) { . $depninjaEnvScript }
+        else {
+            Write-Error "CRITICAL: Cannot load ninja environment. ninja is missing and $depninjaEnvScript was not found."
+            return
+        }
+    }
+}
+
+# --- 5. Initialize clang environment if missing ---
+if ([string]::IsNullOrWhitespace($env:BINARY_CLANG) -or -not (Test-Path $env:BINARY_CLANG)) {
+    $llvmEnvScript = Join-Path $EnvironmentDir "env-llvm.ps1"
+    if (Test-Path $llvmEnvScript) { . $llvmEnvScript }
+    if ([string]::IsNullOrWhitespace($env:BINARY_CLANG) -or -not (Test-Path $env:BINARY_CLANG)) {
+        $depllvmEnvScript = Join-Path $PSScriptRoot "dep-llvm.ps1"
+        if (Test-Path $depllvmEnvScript) { . $depllvmEnvScript }
+        else {
+            Write-Error "CRITICAL: Cannot load clang environment. clang is missing and $depllvmEnvScript was not found."
+            return
+        }
+    }
+}
+
+# Load python requirement
+if ([string]::IsNullOrWhitespace($env:BINARY_PYTHON) -or -not (Test-Path $env:BINARY_PYTHON)) {
+    $pythonEnvScript = Join-Path $EnvironmentDir "env-python.ps1"
+    if (Test-Path $pythonEnvScript) { . $pythonEnvScript }
+    if ([string]::IsNullOrWhitespace($env:BINARY_PYTHON) -or -not (Test-Path $env:BINARY_PYTHON)) {
+        $deppythonEnvScript = Join-Path $PSScriptRoot "dep-python.ps1"
+        if (Test-Path $deppythonEnvScript) { . $deppythonEnvScript }
+        else {
+            Write-Error "CRITICAL: Cannot load python environment. python is missing and $deppythonEnvScript was not found."
+            return
+        }
+    }
+}
+
+$RootpkgconfWorkspacePath = if ([string]::IsNullOrWhitespace($pkgconfWorkspacePath)) { Get-Location } else { $pkgconfWorkspacePath }
+
+$RootPath = $RootpkgconfWorkspacePath
+
+# --- 6. Path Resolution ---
+Push-Location $RootPath
+
+$Source = Join-Path $RootPath "pkgconf"
+$BuildDirShared = Join-Path $Source "build_shared"
+#$BuildDirStatic = Join-Path $Source "build_static" # static build broken
+$RepoUrl = $pkgconfGitUrl
+$Branch = $pkgconfGitBranch
+#$CMakeSource = $Source
+$tag_name = $Branch
+$url = $RepoUrl
+
+$GlobalBinDir = "$env:BINARIES_PATH"
+$TargetLink = Join-Path $GlobalBinDir "pkgconf.exe"
+$TargetPConfLink = Join-Path $GlobalBinDir "pkg-config.exe"
+
 $pkgconfEnvScript = Join-Path $EnvironmentDir "env-pkgconf.ps1"
 $pkgconfMachineEnvScript = Join-Path $EnvironmentDir "machine-env-pkgconf.ps1"
-$RootpkgconfWorkspacePath = if ([string]::IsNullOrWhitespace($pkgconfWorkspacePath)) { Get-Location } else { $pkgconfWorkspacePath }
 
 # --- 1. Cleanup Mechanism ---
 function Invoke-pkgconfVersionPurge {
@@ -153,11 +249,52 @@ Write-Host "[REMOVED] ($TargetScope) all '*$pkgconfroot*' removed from TOOLS_PAT
         Remove-Item $Source -Recurse -Force -ErrorAction SilentlyContinue
     }
     
+    if (Test-Path $TargetLink) { Remove-Item $TargetLink -Force -ErrorAction SilentlyContinue; Write-Host "  [REMOVED] Link: pkgconf.exe" -ForegroundColor Gray }
+    if (Test-Path $TargetPConfLink) { Remove-Item $TargetPConfLink -Force -ErrorAction SilentlyContinue; Write-Host "  [REMOVED] Link: pkg-config.exe" -ForegroundColor Gray }
+    
     # remove local Env variables for current session
-    Get-ChildItem Env:\PKGCONF_PATH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\PKGCONF_ROOT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\PKGCONF_BIN* | Remove-Item -ErrorAction SilentlyContinue
-
+    Get-ChildItem Env:\PKGCONF_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_PKGCONF* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_LIB_PKGCONF* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\SHARED_LIB_PKGCONF* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\STATIC_LIB_PKGCONF* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    
+    $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
+    $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewCMakePrefixPath = ($CleanedCMakePrefixPathList -join ";").Replace(";;", ";")
+    $NewCMakePrefixPath = ($NewCMakePrefixPath + ";").Replace(";;", ";")
+    $env:CMAKE_PREFIX_PATH = $NewCMakePrefixPath
+    
+    $CurrentIncludePath = $env:INCLUDE
+    $CleanedIncludePathList = $CurrentIncludePath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewIncludePath = ($CleanedIncludePathList -join ";").Replace(";;", ";")
+    $NewIncludePath = ($NewIncludePath + ";").Replace(";;", ";")
+    $env:INCLUDE = $NewIncludePath
+    
+    $CurrentLibPath = $env:LIB
+    $CleanedLibPathList = $CurrentLibPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewLibPath = ($CleanedLibPathList -join ";").Replace(";;", ";")
+    $NewLibPath = ($NewLibPath + ";").Replace(";;", ";")
+    $env:LIB = $NewLibPath
+    
+    $CurrentPath = $env:PATH
+    $CleanedPathList = $CurrentPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewPath = ($CleanedPathList -join ";").Replace(";;", ";")
+    $NewPath = ($NewPath + ";").Replace(";;", ";")
+    $env:PATH = $NewPath
+    
     Write-Host "--- pkgconf Purge Complete ---" -ForegroundColor Green
 }
 
@@ -166,118 +303,28 @@ if ($pkgconfForceCleanup) {
     Invoke-pkgconfVersionPurge -InstallPath $pkgconfInstallDir
 }
 
-# --- 1. Initialize Visual Studio 2026 Dev Environment ---
-$DevShellBootstrapScript = Join-Path $PSScriptRoot "dev-shell.ps1"
-if (Test-Path $DevShellBootstrapScript) { . $DevShellBootstrapScript } else {
-    Write-Error "Required dependency '$DevShellBootstrapScript' not found!"
-    return
-}
-
-# --- 2. Initialize git environment if missing ---
-if ([string]::IsNullOrWhitespace($env:BINARY_GIT) -or -not (Test-Path $env:BINARY_GIT)) {
-    $gitEnvScript = Join-Path $EnvironmentDir "env-git.ps1"
-    if (Test-Path $gitEnvScript) { . $gitEnvScript } 
-    if ([string]::IsNullOrWhitespace($env:BINARY_GIT) -or -not (Test-Path $env:BINARY_GIT)) {
-        $depgitEnvScript = Join-Path $PSScriptRoot "dep-git.ps1"
-        if (Test-Path $depgitEnvScript) { . $depgitEnvScript }
-        else {
-            Write-Error "CRITICAL: Cannot load Git environment. git is missing and $depgitEnvScript was not found."
-            return
-        }
-    }
-}
-
-# --- 3. Initialize cmake environment if missing ---
-if ([string]::IsNullOrWhitespace($env:BINARY_CMAKE) -or -not (Test-Path $env:BINARY_CMAKE)) {
-    $cmakeEnvScript = Join-Path $EnvironmentDir "env-cmake.ps1"
-    if (Test-Path $cmakeEnvScript) { . $cmakeEnvScript } 
-    if ([string]::IsNullOrWhitespace($env:BINARY_CMAKE) -or -not (Test-Path $env:BINARY_CMAKE)) {
-        $depcmakeEnvScript = Join-Path $PSScriptRoot "dep-cmake.ps1"
-        if (Test-Path $depcmakeEnvScript) { . $depcmakeEnvScript }
-        else {
-            Write-Error "CRITICAL: Cannot load CMake environment. cmake is missing and $depcmakeEnvScript was not found."
-            return
-        }
-    }
-}
-
-# --- 4. Initialize ninja environment if missing ---
-if ([string]::IsNullOrWhitespace($env:BINARY_NINJA) -or -not (Test-Path $env:BINARY_NINJA)) {
-    $ninjaEnvScript = Join-Path $EnvironmentDir "env-ninja.ps1"
-    if (Test-Path $ninjaEnvScript) { . $ninjaEnvScript }
-    if ([string]::IsNullOrWhitespace($env:BINARY_NINJA) -or -not (Test-Path $env:BINARY_NINJA)) {
-        $depninjaEnvScript = Join-Path $PSScriptRoot "dep-ninja.ps1"
-        if (Test-Path $depninjaEnvScript) { . $depninjaEnvScript }
-        else {
-            Write-Error "CRITICAL: Cannot load ninja environment. ninja is missing and $depninjaEnvScript was not found."
-            return
-        }
-    }
-}
-
-# --- 5. Initialize clang environment if missing ---
-if ([string]::IsNullOrWhitespace($env:BINARY_CLANG) -or -not (Test-Path $env:BINARY_CLANG)) {
-    $llvmEnvScript = Join-Path $EnvironmentDir "env-llvm.ps1"
-    if (Test-Path $llvmEnvScript) { . $llvmEnvScript }
-    if ([string]::IsNullOrWhitespace($env:BINARY_CLANG) -or -not (Test-Path $env:BINARY_CLANG)) {
-        $depllvmEnvScript = Join-Path $PSScriptRoot "dep-llvm.ps1"
-        if (Test-Path $depllvmEnvScript) { . $depllvmEnvScript }
-        else {
-            Write-Error "CRITICAL: Cannot load clang environment. clang is missing and $depllvmEnvScript was not found."
-            return
-        }
-    }
-}
-
-# Load python requirement
-if ([string]::IsNullOrWhitespace($env:BINARY_PYTHON) -or -not (Test-Path $env:BINARY_PYTHON)) {
-    $pythonEnvScript = Join-Path $EnvironmentDir "env-python.ps1"
-    if (Test-Path $pythonEnvScript) { . $pythonEnvScript }
-    if ([string]::IsNullOrWhitespace($env:BINARY_PYTHON) -or -not (Test-Path $env:BINARY_PYTHON)) {
-        $deppythonEnvScript = Join-Path $PSScriptRoot "dep-python.ps1"
-        if (Test-Path $deppythonEnvScript) { . $deppythonEnvScript }
-        else {
-            Write-Error "CRITICAL: Cannot load python environment. python is missing and $deppythonEnvScript was not found."
-            return
-        }
-    }
-}
-
-$RootPath = $RootpkgconfWorkspacePath
-
-# --- 6. Path Resolution ---
-Push-Location $RootPath
-
-$Source = Join-Path $RootPath "pkgconf"
-$BuildDirShared = Join-Path $Source "build_shared"
-#$BuildDirStatic = Join-Path $Source "build_static" # static build broken
-$RepoUrl = $pkgconfGitUrl
-$Branch = $pkgconfGitBranch
-#$CMakeSource = $Source
-$tag_name = $Branch
-$url = $RepoUrl
-
 # --- 7. Source Management ---
 if (Test-Path $Source) {
     Write-Host "Syncing pkgconf ($Branch) at $Source..." -ForegroundColor Cyan
     Set-Location $Source
     git fetch --all
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git fetch failed."; Pop-Location; return }
     git reset --hard "origin/$Branch"
+    git clean -xdf
     git pull --recurse-submodules --force
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git pull failed."; Pop-Location; return }
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 }
 else {
     Write-Host "Cloning pkgconf ($Branch) into $Source..." -ForegroundColor Cyan
     git clone --recurse-submodules $RepoUrl $Source -b $Branch
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git clone failed."; Pop-Location; return }
     Set-Location $Source
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 }
 
 # --- 8. Clean & Build (Shadow Swap Logic) ---
 # We use .exe extension so it remains 'executable' and detectable
-$GlobalBinDir = "$env:BINARIES_PATH"
-$TargetLink = Join-Path $GlobalBinDir "pkgconf.exe"
-$TargetPConfLink = Join-Path $GlobalBinDir "pkg-config.exe"
 # Remove existing symlink we are creating a new one
 if (Test-Path $TargetLink) { Remove-Item $TargetLink -Force -ErrorAction SilentlyContinue }
 if (Test-Path $TargetPConfLink) { Remove-Item $TargetPConfLink -Force -ErrorAction SilentlyContinue }

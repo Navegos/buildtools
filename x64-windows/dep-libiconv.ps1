@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/dep-libiconv.ps1
 # created: 2026-03-07
-# lastModified: 2026-04-26
+# lastModified: 2026-05-01
 
 param (
     [Parameter(HelpMessage = "Target vcpkg LIBICONV triplet")]
@@ -22,7 +22,7 @@ $libiconvForceCleanup = $forceCleanup
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
-    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
+    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
     return
 }
 
@@ -79,10 +79,10 @@ try {
     Write-Host "Fetching latest LIBICONV version from vcpkg master..." -ForegroundColor Gray
     $libiconvManifest = Invoke-RestMethod -Uri $rawJsonUrl
     $url = $rawJsonUrl
-    $tag_name = $libiconvManifest.version
+    $tag_name = if ($libiconvManifest.version) { $libiconvManifest.version } else { $libiconvManifest."version-semver" }
     $updated_at = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
-    $remoteVersionString = $libiconvManifest.version.TrimStart('v')
-    
+    $remoteVersionString = $tag_name.TrimStart('v')
+
     # Clean remote version for comparison (e.g., "1.12.1")
     if ($remoteVersionString -match '^(\d+\.\d+(\.\d+)?)') { $remoteVersion = $Matches[1] }
 
@@ -233,26 +233,12 @@ Write-Host "[REMOVED] ($TargetScope) all '*$libiconvtoolsbinpath*' removed from 
     Pop-Location
     
     # remove local Env variables for current session
-    Get-ChildItem Env:\ICONV_PATH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICONV_ROOT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICONV_BIN* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICONV_TOOLS_BIN* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICONV_INCLUDE_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICONV_LIBRARY_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BINARY_LIB_ICONV* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\SHARED_LIB_ICONV* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BINARY_LIB_CHARSET* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\SHARED_LIB_CHARSET* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICONV_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CHARSET_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICONV_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICONV_MAJOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICONV_MINOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICONV_PATCH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICONV_ABI_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICONV_SO_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CHARSET_ABI_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CHARSET_SO_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ICONV_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\CHARSET_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_LIB_ICONV* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\SHARED_LIB_ICONV* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_LIB_CHARSET* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\SHARED_LIB_CHARSET* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
     
     $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
     $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 

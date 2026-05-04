@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/dep-bzip2.ps1
 # created: 2026-04-11
-# lastModified: 2026-04-26
+# lastModified: 2026-05-01
 
 param (
     [Parameter(HelpMessage = "Target vcpkg BZIP2 triplet")]
@@ -22,7 +22,7 @@ $bzip2ForceCleanup = $forceCleanup
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
-    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
+    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
     return
 }
 
@@ -79,9 +79,9 @@ try {
     Write-Host "Fetching latest BZIP2 version from vcpkg master..." -ForegroundColor Gray
     $bzip2Manifest = Invoke-RestMethod -Uri $rawJsonUrl
     $url = $rawJsonUrl
-    $tag_name = $bzip2Manifest."version-semver"
+    $tag_name = if ($bzip2Manifest.version) { $bzip2Manifest.version } else { $bzip2Manifest."version-semver" }
     $updated_at = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
-    $remoteVersionString = $bzip2Manifest."version-semver".TrimStart('v')
+    $remoteVersionString = $tag_name.TrimStart('v')
     
     # Clean remote version for comparison (e.g., "1.12.1")
     if ($remoteVersionString -match '^(\d+\.\d+(\.\d+)?)') { $remoteVersion = $Matches[1] }
@@ -234,21 +234,9 @@ Write-Host "[REMOVED] ($TargetScope) all '*$bzip2toolsbinpath*' removed from EXT
     Pop-Location
     
     # remove local Env variables for current session
-    Get-ChildItem Env:\BZIP2_PATH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BZIP2_ROOT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BZIP2_BIN* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BZIP2_TOOLS_BIN* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BZIP2_INCLUDE_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BZIP2_LIBRARY_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BINARY_LIB_BZIP2* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\SHARED_LIB_BZIP2* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BZIP2_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BZIP2_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BZIP2_MAJOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BZIP2_MINOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BZIP2_PATCH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BZIP2_ABI_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BZIP2_SO_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\BZIP2_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_LIB_BZIP2* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\SHARED_LIB_BZIP2* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
     
     $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
     $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 

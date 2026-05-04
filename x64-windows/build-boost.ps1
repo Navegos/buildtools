@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/build-boost.ps1
 # created: 2026-03-05
-# lastModified: 2026-04-26
+# lastModified: 2026-05-03
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -37,7 +37,7 @@ $boostWithMachineEnvironment = $withMachineEnvironment
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
-    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
+    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
     return
 }
 
@@ -90,7 +90,7 @@ if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_LZMA) -or -not (Test-Path $env:
         $lzmaBuildScript = Join-Path $PSScriptRoot "build-lzma.ps1"
         if (Test-Path $lzmaBuildScript) {
             $lzmaInstallDir = Join-Path $RootlibboostInstallDir "lzma"
-            & $lzmaBuildScript -workspacePath $RootboostWorkspacePath -lzmaInstallDir $lzmaInstallDir
+            . $lzmaBuildScript -workspacePath $RootboostWorkspacePath -lzmaInstallDir $lzmaInstallDir
         } else {
             Write-Error "CRITICAL: Cannot build lzma. lzma is missing and $lzmaBuildScript was not found."
             return
@@ -106,7 +106,7 @@ if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_ZLIB) -or -not (Test-Path $env:
         $zlibBuildScript = Join-Path $PSScriptRoot "build-zlib.ps1"
         if (Test-Path $zlibBuildScript) {
             $zlibInstallDir = Join-Path $RootlibboostInstallDir "zlib"
-            & $zlibBuildScript -workspacePath $RootboostWorkspacePath -zlibInstallDir $zlibInstallDir
+            . $zlibBuildScript -workspacePath $RootboostWorkspacePath -zlibInstallDir $zlibInstallDir
         } else {
             Write-Error "CRITICAL: Cannot build zlib. zlib is missing and $zlibBuildScript was not found."
             return
@@ -122,7 +122,7 @@ if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_ZSTD) -or -not (Test-Path $env:
         $zstdBuildScript = Join-Path $PSScriptRoot "build-zstd.ps1"
         if (Test-Path $zstdBuildScript) {
             $zstdInstallDir = Join-Path $RootlibboostInstallDir "zstd"
-            & $zstdBuildScript -workspacePath $RootboostWorkspacePath -zstdInstallDir $zstdInstallDir
+            . $zstdBuildScript -workspacePath $RootboostWorkspacePath -zstdInstallDir $zstdInstallDir
         } else {
             Write-Error "CRITICAL: Cannot build zstd. zstd is missing and $zstdBuildScript was not found."
             return
@@ -138,7 +138,7 @@ if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_EXPAT) -or -not (Test-Path $env
         $libexpatBuildScript = Join-Path $PSScriptRoot "build-libexpat.ps1"
         if (Test-Path $libexpatBuildScript) {
             $libexpatInstallDir = Join-Path $RootlibboostInstallDir "libexpat"
-            & $libexpatBuildScript -workspacePath $RootboostWorkspacePath -libexpatInstallDir $libexpatInstallDir
+            . $libexpatBuildScript -workspacePath $RootboostWorkspacePath -libexpatInstallDir $libexpatInstallDir
         } else {
             Write-Error "CRITICAL: Cannot build libexpat. libexpat is missing and $libexpatBuildScript was not found."
             return
@@ -188,6 +188,22 @@ if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_BZIP2) -or -not (Test-Path $env
     }
 }
 
+# Load hwloc requirement (NUMA support for Boost.Fiber)
+if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_HWLOC) -or -not (Test-Path $env:SHARED_LIB_HWLOC)) {
+    $hwlocEnvScript = Join-Path $EnvironmentDir "env-hwloc.ps1"
+    if (Test-Path $hwlocEnvScript) { . $hwlocEnvScript }
+    if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_HWLOC) -or -not (Test-Path $env:SHARED_LIB_HWLOC)) {
+        $hwlocBuildScript = Join-Path $PSScriptRoot "build-hwloc.ps1"
+        if (Test-Path $hwlocBuildScript) {
+            $hwlocInstallDir = Join-Path $RootlibboostInstallDir "hwloc"
+            . $hwlocBuildScript -workspacePath $RootboostWorkspacePath -hwlocInstallDir $hwlocInstallDir
+        } else {
+            Write-Error "CRITICAL: Cannot build hwloc. hwloc is missing and $hwlocBuildScript was not found."
+            return
+        }
+    }
+}
+
 # Load oneTBB requirement
 if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_TBB) -or -not (Test-Path $env:SHARED_LIB_TBB)) {
     $oneTBBEnvScript = Join-Path $EnvironmentDir "env-onetbb.ps1"
@@ -196,7 +212,7 @@ if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_TBB) -or -not (Test-Path $env:S
         $oneTBBBuildScript = Join-Path $PSScriptRoot "build-onetbb.ps1"
         if (Test-Path $oneTBBBuildScript) {
             $oneTBBInstallDir = Join-Path $RootlibboostInstallDir "oneTBB"
-            & $oneTBBBuildScript -workspacePath $RootboostWorkspacePath -oneTBBInstallDir $oneTBBInstallDir
+            . $oneTBBBuildScript -workspacePath $RootboostWorkspacePath -oneTBBInstallDir $oneTBBInstallDir
         } else {
             Write-Error "CRITICAL: Cannot build oneTBB. oneTBB is missing and $oneTBBBuildScript was not found."
             return
@@ -213,6 +229,34 @@ if ([string]::IsNullOrWhitespace($env:BINARY_PYTHON) -or -not (Test-Path $env:BI
         if (Test-Path $deppythonEnvScript) { . $deppythonEnvScript }
         else {
             Write-Error "CRITICAL: Cannot load python environment. python is missing and $deppythonEnvScript was not found."
+            return
+        }
+    }
+}
+
+# Load CUDA (OpenCL for Boost.Compute) requirement
+if ([string]::IsNullOrWhitespace($env:BINARY_NVCC) -or -not (Test-Path $env:BINARY_NVCC)) {
+    $cudaEnvScript = Join-Path $EnvironmentDir "env-cuda.ps1"
+    if (Test-Path $cudaEnvScript) { . $cudaEnvScript }
+    if ([string]::IsNullOrWhitespace($env:BINARY_NVCC) -or -not (Test-Path $env:BINARY_NVCC)) {
+        $depcudaEnvScript = Join-Path $PSScriptRoot "dep-cuda.ps1"
+        if (Test-Path $depcudaEnvScript) { . $depcudaEnvScript }
+        else {
+            Write-Error "CRITICAL: Cannot load cuda environment. cuda is missing and $depcudaEnvScript was not found."
+            return
+        }
+    }
+}
+
+# Load MS-MPI requirement
+if ([string]::IsNullOrWhitespace($env:BINARY_LIB_MSMPI) -or -not (Test-Path $env:BINARY_LIB_MSMPI)) {
+    $msmpiEnvScript = Join-Path $EnvironmentDir "env-msmpi.ps1"
+    if (Test-Path $msmpiEnvScript) { . $msmpiEnvScript }
+    if ([string]::IsNullOrWhitespace($env:BINARY_LIB_MSMPI) -or -not (Test-Path $env:BINARY_LIB_MSMPI)) {
+        $depmsmpiEnvScript = Join-Path $PSScriptRoot "dep-msmpi.ps1"
+        if (Test-Path $depmsmpiEnvScript) { . $depmsmpiEnvScript }
+        else {
+            Write-Error "CRITICAL: Cannot load msmpi environment. msmpi is missing and $depmsmpiEnvScript was not found."
             return
         }
     }
@@ -342,7 +386,7 @@ Write-Host "[REMOVED] ($TargetScope) all '*$boostroot*' removed from EXTCOMPLIBS
     }
 
     # 2. Filesystem Clean (Requires checking for locked files)
-    # delete everithing we create don't fail later
+    # delete everything we create don't fail later
     if (Test-Path $boostEnvScript) {
         Write-Host "  [DELETING] $boostEnvScript" -ForegroundColor Yellow
         Remove-Item $boostEnvScript -Recurse -Force -ErrorAction SilentlyContinue
@@ -361,17 +405,7 @@ Write-Host "[REMOVED] ($TargetScope) all '*$boostroot*' removed from EXTCOMPLIBS
     }
     
     # remove local Env variables for current session
-    Get-ChildItem Env:\BOOST_PATH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BOOST_ROOT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BOOST_BIN* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BOOST_INCLUDE_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BOOST_LIBRARY_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BOOST_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BOOST_MAJOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BOOST_MINOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BOOST_PATCH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BOOST_ABI_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BOOST_SO_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\BOOST_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
     
     $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
     $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 
@@ -421,8 +455,11 @@ if (Test-Path $Source) {
     Write-Host "Syncing Boost ($Branch) at $Source..." -ForegroundColor Cyan
     Set-Location $Source
     git fetch --all
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git fetch failed."; Pop-Location; return }
     git reset --hard "origin/$Branch"
+    git clean -xdf
     git pull --recurse-submodules --force
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git pull failed."; Pop-Location; return }
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 } else {
     Write-Host "Cloning Boost ($Branch)..." -ForegroundColor Cyan
@@ -442,6 +479,35 @@ if (-not (Test-Path $b2Path)) {
     Pop-Location; return
 }
 
+# --- 4.5. Apply Clang-Win B2 Patch ---
+$PatchFile = Join-Path $PSScriptRoot "patch\boost_clang_win_jam.patch"
+if (Test-Path $PatchFile) {
+    Write-Host "[PATCH] Verifying custom B2 modifications..." -ForegroundColor Cyan
+    
+    # 1. Perform a Dry-Run (--check)
+    # --ignore-space-change handles the Windows/Linux line-ending (CRLF/LF) headaches
+    # Note: tools/build is a submodule, so we must use --directory to apply it correctly
+    git apply --directory="tools/build" --check --ignore-space-change "$PatchFile"
+    
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "[PATCH] Verification successful. Applying patch..." -ForegroundColor Green
+        
+        # 2. Actually apply the patch
+        git apply --directory="tools/build" --ignore-space-change --verbose "$PatchFile"
+        
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "CRITICAL: Patch verification passed but application failed!"
+            Pop-Location; return
+        }
+    } else {
+        Write-Warning "[PATCH] Patch verification failed. The source may have changed upstream.
+        Write-Host "Check the patch file for conflicts or update the patch." -ForegroundColor Yellow"
+        
+        # In a strict build-chain, you might want to stop here:
+        Pop-Location; return
+    }
+}
+
 # --- 5. Clean Final Destination ---
 if (Test-Path $boostInstallDir) {
     Write-Host "Wiping existing installation..." -ForegroundColor Yellow
@@ -455,44 +521,75 @@ New-Item -Path $boostInstallDir -ItemType Directory -Force -ErrorAction Silently
 if (Test-Path $BuildDirShared) { Remove-Item $BuildDirShared -Recurse -Force -ErrorAction SilentlyContinue }
 if (Test-Path $BuildDirStatic) { Remove-Item $BuildDirStatic -Recurse -Force -ErrorAction SilentlyContinue }
 if (Test-Path $StageDir) { Remove-Item $StageDir -Recurse -Force -ErrorAction SilentlyContinue }
-if (Test-Path $StageDir) { Remove-Item $StageDir -Recurse -Force -ErrorAction SilentlyContinue }
 New-Item -Path $BuildDirShared -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
 New-Item -Path $BuildDirStatic -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
-New-Item -Path $StageDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
 New-Item -Path $StageDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
 
 # --- 6. Build Execution ---
 # Note: Using address-model=64 for Win64
-$CommonArgs = "-j$Cores", "address-model=64", "architecture=x86", "threading=multi", "runtime-link=shared", "--build-type=minimal", "stage", "install"
+$CommonArgs = @("-j$Cores", "address-model=64", "architecture=x86", "threading=multi", "runtime-link=shared", "--build-type=minimal", "stage", "install")
 $Toolset = "clang-win"  # Changed from msvc
 
 # --- Mapping Dependencies ---
 $AdittionalArgs = @(
     # Compression (Iostreams)
     "-sZLIB_INCLUDE=$env:ZLIB_INCLUDE_DIR", "-sZLIB_LIBPATH=$env:ZLIB_LIBRARY_DIR", "-sZLIB_BINARY=$env:ZLIB_LIB_NAME",
+    "include=$($env:ZLIB_INCLUDE_DIR -replace '\\', '/')", "library-path=$($env:ZLIB_LIBRARY_DIR -replace '\\', '/')", "find-shared-library=$env:ZLIB_LIB_NAME",
+    
     "-sBZIP2_INCLUDE=$env:BZIP2_INCLUDE_DIR", "-sBZIP2_LIBPATH=$env:BZIP2_LIBRARY_DIR", "-sBZIP2_BINARY=$env:BZIP2_LIB_NAME",
+    "include=$($env:BZIP2_INCLUDE_DIR -replace '\\', '/')", "library-path=$($env:BZIP2_LIBRARY_DIR -replace '\\', '/')", "find-shared-library=$env:BZIP2_LIB_NAME",
+    
     "-sLZMA_INCLUDE=$env:LZMA_INCLUDE_DIR", "-sLZMA_LIBPATH=$env:LZMA_LIBRARY_DIR", "-sLZMA_BINARY=$env:LZMA_LIB_NAME",
+    "include=$($env:LZMA_INCLUDE_DIR -replace '\\', '/')", "library-path=$($env:LZMA_LIBRARY_DIR -replace '\\', '/')", "find-shared-library=$env:LZMA_LIB_NAME",
+    
     "-sZSTD_INCLUDE=$env:ZSTD_INCLUDE_DIR", "-sZSTD_LIBPATH=$env:ZSTD_LIBRARY_DIR", "-sZSTD_BINARY=$env:ZSTD_LIB_NAME",
+    "include=$($env:ZSTD_INCLUDE_DIR -replace '\\', '/')", "library-path=$($env:ZSTD_LIBRARY_DIR -replace '\\', '/')", "find-shared-library=$env:ZSTD_LIB_NAME",
     
     # Internationalization (Regex / Locale)
     "-sICU_PATH=$env:ICU_PATH", 
+    "include=$($env:ICU_INCLUDE_DIR -replace '\\', '/')", "library-path=$($env:ICU_LIBRARY_DIR -replace '\\', '/')", "find-shared-library=$env:ICU_LIB_NAME",
+    
     "-sICONV_PATH=$env:ICONV_PATH",
+    "include=$($env:ICONV_INCLUDE_DIR -replace '\\', '/')", "library-path=$($env:ICONV_LIBRARY_DIR -replace '\\', '/')", "find-shared-library=$env:ICONV_LIB_NAME",
     
     # XML Parsing (PropertyTree)
-    "-sEXPAT_INCLUDE=$env:EXPAT_INCLUDE_DIR", "-sEXPAT_LIBPATH=$env:EXPAT_LIBRARY_DIR", "-sEXPAT_BINARY=$env:LIBEXPAT_LIB_NAME",
+    "-sEXPAT_INCLUDE=$env:LIBEXPAT_INCLUDE_DIR", "-sEXPAT_LIBPATH=$env:LIBEXPAT_LIBRARY_DIR", "-sEXPAT_BINARY=$env:LIBEXPAT_LIB_NAME",
+    "include=$($env:LIBEXPAT_INCLUDE_DIR -replace '\\', '/')", "library-path=$($env:LIBEXPAT_LIBRARY_DIR -replace '\\', '/')", "find-shared-library=$env:LIBEXPAT_LIB_NAME",
     
     # Parallelism (Context / Fiber / Thread)
     "-sTBB_INCLUDE=$env:TBB_INCLUDE_DIR", "-sTBB_LIBPATH=$env:TBB_LIBRARY_DIR", "-sTBB_BINARY=$env:TBB_LIB_NAME",
+    "include=$($env:TBB_INCLUDE_DIR -replace '\\', '/')", "library-path=$($env:TBB_LIBRARY_DIR -replace '\\', '/')", "find-shared-library=$env:TBB_LIB_NAME",
+    
+    # Hardware Locality (NUMA support for Boost.Fiber)
+    "include=$($env:HWLOC_INCLUDE_DIR -replace '\\', '/')", "library-path=$($env:HWLOC_LIBRARY_DIR -replace '\\', '/')", "find-shared-library=$env:HWLOC_LIB_NAME",
+    
+    # GPU / OpenCL (Boost.Compute)
+    "-sOPENCL_ROOT=$env:CUDA_ROOT",
+    "-sOPENCL_INCLUDE=$env:CUDA_INCLUDE_DIR",
+    "-sOPENCL_LIBPATH=$env:CUDA_LIBRARY_DIR",
+    "include=$($env:CUDA_INCLUDE_DIR -replace '\\', '/')", "library-path=$($env:CUDA_LIBRARY_DIR -replace '\\', '/')", "find-shared-library=OpenCL",
     
     # Python Support
-    "--with-python",
     "-sPYTHON_ROOT=$env:PYTHON_PATH",
-    "-sPYTHON_VERSION=$env:PYTHON_ABI_VERSION"
+    "-sPYTHON_VERSION=$env:PYTHON_ABI_VERSION",
+    
+    # MPI
+    "include=$($env:MSMPI_INC -replace '\\', '/')", "library-path=$($env:MSMPI_LIB64 -replace '\\', '/')", "find-shared-library=$env:MSMPI_LIB_NAME"
+
+    # Image Libraries (Boost.GIL)
+    "-sPNG_INCLUDE=$env:LIBPNG_INCLUDE_DIR", "-sPNG_LIBPATH=$env:LIBPNG_LIBRARY_DIR", "-sPNG_BINARY=$env:LIBPNG_LIB_NAME",
+    "include=$($env:LIBPNG_INCLUDE_DIR -replace '\\', '/')", "library-path=$($env:LIBPNG_LIBRARY_DIR -replace '\\', '/')", "find-shared-library=$env:LIBPNG_LIB_NAME",
+    
+    "-sJPEG_INCLUDE=$env:LIBJPEG_INCLUDE_DIR", "-sJPEG_LIBPATH=$env:LIBJPEG_LIBRARY_DIR", "-sJPEG_BINARY=$env:LIBJPEG_LIB_NAME",
+    "include=$($env:LIBJPEG_INCLUDE_DIR -replace '\\', '/')", "library-path=$($env:LIBJPEG_LIBRARY_DIR -replace '\\', '/')", "find-shared-library=$env:LIBJPEG_LIB_NAME",
+    
+    "-sTIFF_INCLUDE=$env:LIBTIFF_INCLUDE_DIR", "-sTIFF_LIBPATH=$env:LIBTIFF_LIBRARY_DIR", "-sTIFF_BINARY=$env:LIBTIFF_LIB_NAME",
+    "include=$($env:LIBTIFF_INCLUDE_DIR -replace '\\', '/')", "library-path=$($env:LIBTIFF_LIBRARY_DIR -replace '\\', '/')", "find-shared-library=$env:LIBTIFF_LIB_NAME"
 )
 
 # STAGE 1: Static Libraries (staged to stage/lib)
 Write-Host "Building Boost Static Libraries..." -ForegroundColor Cyan
-cmd /c $b2Path $CommonArgs cstd=17 cxxstd=20 toolset=$Toolset link=static --build-dir="$BuildDirStatic" --stagedir="$StageDir" --prefix="$boostInstallDir" $AdittionalArgs
+cmd /c $b2Path $CommonArgs cxxstd=20 toolset=$Toolset link=static --build-dir="$BuildDirStatic" --stagedir="$StageDir" --prefix="$boostInstallDir" $AdittionalArgs
 if ($LASTEXITCODE -ne 0) { 
     Write-Warning "Boost Static build finished with exit code $LASTEXITCODE. Checking for output..."
     if (-not (Test-Path "$boostInstallDir\lib")) { Write-Error "Static Build Failed"; Pop-Location; return }
@@ -500,7 +597,7 @@ if ($LASTEXITCODE -ne 0) {
 
 # STAGE 2: Shared Libraries (DLLs)
 Write-Host "Building Boost Shared Libraries (DLLs)..." -ForegroundColor Cyan
-cmd /c $b2Path $CommonArgs cstd=17 cxxstd=20 toolset=$Toolset link=shared --build-dir="$BuildDirShared" --stagedir="$StageDir" --prefix="$boostInstallDir" $AdittionalArgs
+cmd /c $b2Path $CommonArgs cxxstd=20 toolset=$Toolset link=shared --build-dir="$BuildDirShared" --stagedir="$StageDir" --prefix="$boostInstallDir" $AdittionalArgs
 if ($LASTEXITCODE -ne 0) { 
     Write-Warning "Boost Shared build finished with exit code $LASTEXITCODE. Checking for output..."
     if (-not (Test-Path "$boostInstallDir\lib")) { Write-Error "Shared Build Failed"; Pop-Location; return }
@@ -509,10 +606,9 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "Successfully built and installed boost to $boostInstallDir!" -ForegroundColor Green
 
 # Cleanup temporary build debris
-<# Remove-Item $BuildDirShared -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item $BuildDirShared -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item $BuildDirStatic -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item $StageDir -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item $StageDir -Recurse -Force -ErrorAction SilentlyContinue #>
 
 # --- 6.5. Post-Build: Migrate DLLs to \bin ---
 # Generate Environment Helper with Clean Paths

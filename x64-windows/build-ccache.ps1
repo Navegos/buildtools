@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/build-ccache.ps1
 # created: 2026-03-10
-# lastModified: 2026-04-26
+# lastModified: 2026-04-29
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -27,7 +27,7 @@ $ccacheWithMachineEnvironment = $withMachineEnvironment
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
-    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
+    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
     return
 }
 

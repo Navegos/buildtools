@@ -1,36 +1,36 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # project: buildtools
-# file: x64-windows/build-ninja.ps1
-# created: 2026-02-28
+# file: x64-windows/build-jom.ps1
+# created: 2026-05-03
 # lastModified: 2026-05-03
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
     [string]$workspacePath = $null,
 
-    [Parameter(HelpMessage = "ninja git repo url", Mandatory = $false)]
-    [string]$gitUrl = "https://github.com/ninja-build/ninja.git",
+    [Parameter(HelpMessage = "jom git repo url", Mandatory = $false)]
+    [string]$gitUrl = "https://github.com/qt-labs/jom.git",
     
-    [Parameter(HelpMessage = "ninja git branch to sync from", Mandatory = $false)]
+    [Parameter(HelpMessage = "jom git branch to sync from", Mandatory = $false)]
     [string]$gitBranch = "master",
 
-    [Parameter(HelpMessage = "Path for ninja storage", Mandatory = $false)]
-    [string]$ninjaInstallDir = "$env:LIBRARIES_PATH\ninja",
+    [Parameter(HelpMessage = "Path for jom storage", Mandatory = $false)]
+    [string]$jomInstallDir = "$env:LIBRARIES_PATH\jom",
     
-    [Parameter(HelpMessage = "Force a full purge of the local Ninja version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Force a full purge of the local Jom version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
     
-    [Parameter(HelpMessage = "Add's Ninja Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
+    [Parameter(HelpMessage = "Add's Jom Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
     [switch]$withMachineEnvironment
 )
 
 # Capture parameters
-$NinjaWorkspacePath = $workspacePath
-$NinjaGitUrl = $gitUrl
-$NinjaGitBranch = $gitBranch
-$NinjaForceCleanup = $forceCleanup
-$NinjaWithMachineEnvironment = $withMachineEnvironment
+$JomWorkspacePath = $workspacePath
+$JomGitUrl = $gitUrl
+$JomGitBranch = $gitBranch
+$JomForceCleanup = $forceCleanup
+$JomWithMachineEnvironment = $withMachineEnvironment
 
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
     Write-Error "User Environment variables missing. With administrator privileges run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
@@ -39,32 +39,32 @@ if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env
 
 $EnvironmentDir = "$env:ENVIRONMENT_PATH"
 
-$ninjaEnvScript = Join-Path $EnvironmentDir "env-ninja.ps1"
-$ninjaMachineEnvScript = Join-Path $EnvironmentDir "machine-env-ninja.ps1"
-$RootNinjaWorkspacePath = if ([string]::IsNullOrWhitespace($NinjaWorkspacePath)) { Get-Location } else { $NinjaWorkspacePath }
+$jomEnvScript = Join-Path $EnvironmentDir "env-jom.ps1"
+$jomMachineEnvScript = Join-Path $EnvironmentDir "machine-env-jom.ps1"
+$RootJomWorkspacePath = if ([string]::IsNullOrWhitespace($JomWorkspacePath)) { Get-Location } else { $JomWorkspacePath }
 
 $GlobalBinDir = "$env:BINARIES_PATH"
-$TargetLink = Join-Path $GlobalBinDir "ninja.exe"
+$TargetLink = Join-Path $GlobalBinDir "jom.exe"
 
 # --- 1. Cleanup Mechanism ---
-function Invoke-NinjaVersionPurge {
+function Invoke-JomVersionPurge {
     param ([string]$InstallPath)
-    Write-Host "--- Initiating Ninja Purge ---" -ForegroundColor Cyan
+    Write-Host "--- Initiating Jom Purge ---" -ForegroundColor Cyan
 
-    if ($NinjaWithMachineEnvironment)
+    if ($JomWithMachineEnvironment)
     {
-        $ninjaCleanMachineEnvScript = Join-Path $env:TEMP "clean-machine-env-ninja.ps1"
-
+        $jomCleanMachineEnvScript = Join-Path $env:TEMP "clean-machine-env-jom.ps1"
+        
         # Generating Clean Machine Environment wich removes the persist registry machine Environment
         $CleanMachineEnvContent = @'
-# Ninja Clean Machine Environment Setup
+# Jom Clean Machine Environment Setup
 
 # --- 0. Self-Elevation Logic ---
 $IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 $ScopeColor = "Cyan"
 
 if (-not $IsAdmin) {
-    Write-Host "Elevation required to clean ninja system variables. Relaunching as Administrator..." -ForegroundColor Yellow
+    Write-Host "Elevation required to clean jom system variables. Relaunching as Administrator..." -ForegroundColor Yellow
     # Pass the parameters to the elevated process so they aren't lost
     $Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
     foreach ($Parameter in $PSBoundParameters.GetEnumerator()) {
@@ -86,7 +86,7 @@ if (-not $IsAdmin) {
     exit
 }
 
-$ninjaroot = "VALUE_ROOT_PATH"
+$jomroot = "VALUE_ROOT_PATH"
 
 $TargetScope = if ($IsAdmin) { "Machine" } else { "User" }
 $RegPath = if ($IsAdmin) { "System\CurrentControlSet\Control\Session Manager\Environment" } else { "Environment" }
@@ -98,8 +98,8 @@ $RegKey = [Microsoft.Win32.Registry]::$RegRoot.OpenSubKey($RegPath, $true)
 # Open the registry key directly to read the RAW (unexpanded) string
 $RawPath = $RegKey.GetValue("TOOLS_PATH", "", [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
 
-# Cleanup: Remove empty strings, any path containing $ninjaroot,
-$CleanPath = ($RawPath -split ';' | Where-Object { $_ -notlike "*$ninjaroot*" }) -join ";"
+# Cleanup: Remove empty strings, any path containing $jomroot,
+$CleanPath = ($RawPath -split ';' | Where-Object { $_ -notlike "*$jomroot*" }) -join ";"
 
 # Save as ExpandString
 $RegKey.SetValue("TOOLS_PATH", $CleanPath, [Microsoft.Win32.RegistryValueKind]::ExpandString)
@@ -107,20 +107,20 @@ $env:TOOLS_PATH = $CleanPath
 
 $RegKey.Close()
 
-Write-Host "[REMOVED] ($TargetScope) all '*$ninjaroot*' removed from TOOLS_PATH" -ForegroundColor $ScopeColor
+Write-Host "[REMOVED] ($TargetScope) all '*$jomroot*' removed from TOOLS_PATH" -ForegroundColor $ScopeColor
 '@  -replace "VALUE_ROOT_PATH", $InstallPath
 
-        $CleanMachineEnvContent | Out-File -FilePath $ninjaCleanMachineEnvScript -Encoding utf8
-        Write-Host "Created: $ninjaCleanMachineEnvScript" -ForegroundColor Gray
+        $CleanMachineEnvContent | Out-File -FilePath $jomCleanMachineEnvScript -Encoding utf8
+        Write-Host "Created: $jomCleanMachineEnvScript" -ForegroundColor Gray
         
         # --- Interaction: Prompt to remove persistent changes ---
         Write-Host ""
-        $choice = Read-Host "Administrator rights required to Clean Machine Environment ninja changes? (y/n)"
+        $choice = Read-Host "Administrator rights required to Clean Machine Environment jom changes? (y/n)"
         if ($choice -eq 'y' -or $choice -eq 'Y') {
-            Write-Host "Executing $ninjaCleanMachineEnvScript..." -ForegroundColor Yellow
+            Write-Host "Executing $jomCleanMachineEnvScript..." -ForegroundColor Yellow
             try {
                 # Start the generated script. It handles its own elevation logic.
-                & $ninjaCleanMachineEnvScript
+                & $jomCleanMachineEnvScript
             }
             catch {
                 Write-Error "Failed to execute the Clean Machine Environment script: $($_.Exception.Message)"
@@ -128,25 +128,25 @@ Write-Host "[REMOVED] ($TargetScope) all '*$ninjaroot*' removed from TOOLS_PATH"
             }
         }
         else {
-            Write-Error "Skipped Clean Machine Environment ninja changes."
+            Write-Error "Skipped Clean Machine Environment jom changes."
             return
         }
-
+        
         # Cleanup
-        Remove-Item $ninjaCleanMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item $jomCleanMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    $Source         = Join-Path $RootNinjaWorkspacePath "ninja"
+    $Source = Join-Path $RootJomWorkspacePath "jom"
     
     # 2. Filesystem Clean (Requires checking for locked files)
     # delete everithing we create don't fail later
-    if (Test-Path $ninjaEnvScript) {
-        Write-Host "  [DELETING] $ninjaEnvScript" -ForegroundColor Yellow
-        Remove-Item $ninjaEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path $jomEnvScript) {
+        Write-Host "  [DELETING] $jomEnvScript" -ForegroundColor Yellow
+        Remove-Item $jomEnvScript -Recurse -Force -ErrorAction SilentlyContinue
     }
-    if (Test-Path $ninjaMachineEnvScript) {
-        Write-Host "  [DELETING] $ninjaMachineEnvScript" -ForegroundColor Yellow
-        Remove-Item $ninjaMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path $jomMachineEnvScript) {
+        Write-Host "  [DELETING] $jomMachineEnvScript" -ForegroundColor Yellow
+        Remove-Item $jomMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
     }
     if (Test-Path $InstallPath) {
         Write-Host "  [DELETING] $InstallPath" -ForegroundColor Yellow
@@ -157,11 +157,11 @@ Write-Host "[REMOVED] ($TargetScope) all '*$ninjaroot*' removed from TOOLS_PATH"
         Remove-Item $Source -Recurse -Force -ErrorAction SilentlyContinue
     }
     
-    if (Test-Path $TargetLink) { Remove-Item $TargetLink -Force -ErrorAction SilentlyContinue; Write-Host "  [REMOVED] Link: ninja.exe" -ForegroundColor Gray }
-    
+    if (Test-Path $TargetLink) { Remove-Item $TargetLink -Force -ErrorAction SilentlyContinue; Write-Host "  [REMOVED] Link: jom.exe" -ForegroundColor Gray }
+
     # remove local Env variables for current session
-    Get-ChildItem Env:\NINJA_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
-    Get-ChildItem Env:\BINARY_NINJA* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\JOM_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_JOM* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
 
     $CurrentPath = $env:PATH
     $CleanedPathList = $CurrentPath -split ';' | Where-Object { 
@@ -172,12 +172,11 @@ Write-Host "[REMOVED] ($TargetScope) all '*$ninjaroot*' removed from TOOLS_PATH"
     $NewPath = ($NewPath + ";").Replace(";;", ";")
     $env:PATH = $NewPath
     
-    Write-Host "--- Ninja Purge Complete ---" -ForegroundColor Green
+    Write-Host "--- Jom Purge Complete ---" -ForegroundColor Green
 }
 
-# We need to call Purge before dep-ninja or dependencie builds fails
-if ($NinjaForceCleanup) {
-    Invoke-NinjaVersionPurge -InstallPath $ninjaInstallDir
+if ($JomForceCleanup) {
+    Invoke-JomVersionPurge -InstallPath $jomInstallDir
 }
 
 # --- 1. Initialize Visual Studio 2026 Dev Environment ---
@@ -243,22 +242,36 @@ if ([string]::IsNullOrWhitespace($env:BINARY_CLANG) -or -not (Test-Path $env:BIN
     }
 }
 
-$RootPath = $RootNinjaWorkspacePath
+# --- 6. Initialize Qt environment if missing ---
+if ([string]::IsNullOrWhitespace($env:QT_ROOT) -or -not (Test-Path $env:QT_ROOT)) {
+    $qtEnvScript = Join-Path $EnvironmentDir "env-qt.ps1"
+    if (Test-Path $qtEnvScript) { . $qtEnvScript }
+    if ([string]::IsNullOrWhitespace($env:QT_ROOT) -or -not (Test-Path $env:QT_ROOT)) {
+        $depqtEnvScript = Join-Path $PSScriptRoot "dep-qt.ps1"
+        if (Test-Path $depqtEnvScript) { . $depqtEnvScript }
+        else {
+            Write-Error "CRITICAL: Cannot load Qt environment. Qt is missing and $depqtEnvScript was not found."
+            return
+        }
+    }
+}
+
+$RootPath = $RootJomWorkspacePath
 
 # --- 6. Path Resolution ---
 Push-Location $RootPath
 
-$Source         = Join-Path $RootPath "ninja"
-$BuildDir       = Join-Path $Source "build_dir"  # Nested inside source
-$RepoUrl        = $NinjaGitUrl
-$Branch         = $NinjaGitBranch
+$Source         = Join-Path $RootPath "jom"
+$BuildDir       = Join-Path $Source "build_dir"
+$RepoUrl        = $JomGitUrl
+$Branch         = $JomGitBranch
 $CMakeSource    = $Source
 $tag_name       = $Branch
 $url            = $RepoUrl
 
 # --- 7. Source Management ---
 if (Test-Path $Source) {
-    Write-Host "Syncing ninja ($Branch) at $Source..." -ForegroundColor Cyan
+    Write-Host "Syncing jom ($Branch) at $Source..." -ForegroundColor Cyan
     Set-Location $Source
     git fetch --all
     if ($LASTEXITCODE -ne 0) { Write-Error "Git fetch failed."; Pop-Location; return }
@@ -268,7 +281,7 @@ if (Test-Path $Source) {
     if ($LASTEXITCODE -ne 0) { Write-Error "Git pull failed."; Pop-Location; return }
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 } else {
-    Write-Host "Cloning ninja ($Branch) into $Source..." -ForegroundColor Cyan
+    Write-Host "Cloning jom ($Branch) into $Source..." -ForegroundColor Cyan
     git clone --recurse-submodules $RepoUrl $Source -b $Branch
     if ($LASTEXITCODE -ne 0) { Write-Error "Git clone failed."; Pop-Location; return }
     Set-Location $Source
@@ -276,69 +289,95 @@ if (Test-Path $Source) {
 }
 
 # --- 8. Clean & Build (Shadow Swap Logic) ---
-# We use .exe extension so it remains 'executable' and detectable
-$ninjaBinPath = Join-Path $ninjaInstallDir "bin"
+$jomBinPath = Join-Path $jomInstallDir "bin"
 
-# 2. Check for existing installation
-$ninjaExePath = Join-Path $ninjaInstallDir "ninja.exe"
-if (-not (Test-Path $ninjaExePath)) { $ninjaExePath = Join-Path $ninjaBinPath "ninja.exe" }
-$TempNinjaDir = Join-Path $env:TEMP "ninja_old"
-$TempNinjaBinDir = Join-Path $TempNinjaDir "bin"
-$TempNinja = Join-Path $TempNinjaBinDir "ninja.exe"
-$versionFile = Join-Path $ninjaInstallDir "version.json"
+$jomExePath = Join-Path $jomInstallDir "jom.exe"
+if (-not (Test-Path $jomExePath)) { $jomExePath = Join-Path $jomBinPath "jom.exe" }
+$TempJomDir = Join-Path $env:TEMP "jom_old"
+$TempJomBinDir = Join-Path $TempJomDir "bin"
+$TempJom = Join-Path $TempJomBinDir "jom.exe"
+$versionFile = Join-Path $jomInstallDir "version.json"
 
-if (Test-Path $ninjaExePath) {
-    if (Test-Path $TempNinja) { Remove-Item $TempNinja -Force -ErrorAction SilentlyContinue } else {
+if (Test-Path $jomExePath) {
+    if (Test-Path $TempJom) { Remove-Item $TempJom -Force -ErrorAction SilentlyContinue } else {
         # Create a brand new, temp empty directory
-        if (-not (Test-Path $TempNinjaBinDir))
+        if (-not (Test-Path $TempJomBinDir))
         {
-            Write-Host "[INSTALL] Creating fresh temp directory: $TempNinjaBinDir" -ForegroundColor Cyan
-            New-Item -Path $TempNinjaBinDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
+            Write-Host "[INSTALL] Creating fresh temp directory: $TempJomBinDir" -ForegroundColor Cyan
+            New-Item -Path $TempJomBinDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
         }
     }
-
+    
     # 1. Rename the existing binary (Windows allows this while running)
-    Move-Item -Path $ninjaExePath -Destination $TempNinja -Force -ErrorAction SilentlyContinue
-    Write-Host "[SWAP] Active ninja.exe -> $TempNinja" -ForegroundColor Yellow
+    Move-Item -Path $jomExePath -Destination $TempJom -Force -ErrorAction SilentlyContinue
+    Write-Host "[SWAP] Active jom.exe -> $TempJom" -ForegroundColor Yellow
 
-    if (Test-Path $TempNinja) {
+    if (Test-Path $TempJom) {
         Write-Host "Creating global symlink: $TargetLink" -ForegroundColor Cyan
-
+        
         # Remove existing symlink we are creating a new one
         if (Test-Path $TargetLink) { Remove-Item $TargetLink -Force -ErrorAction SilentlyContinue }
-
+        
         # Create the Symbolic Link
         try {
-            New-Item -Path $TargetLink -ItemType SymbolicLink -Value $TempNinja -ErrorAction Stop | Out-Null
-            Write-Host "[LINKED] Ninja (Global) -> $TempNinja" -ForegroundColor Green
+            New-Item -Path $TargetLink -ItemType SymbolicLink -Value $TempJom -ErrorAction Stop | Out-Null
+            Write-Host "[LINKED] Jom (Global) -> $TempJom" -ForegroundColor Green
         }
         catch {
-            New-Item -Path $TargetLink -ItemType HardLink -Value $TempNinja | Out-Null
-            Write-Host "[HARDLINKED] Ninja (Global) -> $TempNinja" -ForegroundColor Green
+            New-Item -Path $TargetLink -ItemType HardLink -Value $TempJom | Out-Null
+            Write-Host "[HARDLINKED] Jom (Global) -> $TempJom" -ForegroundColor Green
         }
-
-        Write-Host "[LINKED] Ninja is now globally available via %BINARIES_PATH%" -ForegroundColor Green
     }
     else {
-        Write-Error "CRITICAL: Could not find ninja.exe to symlink at $TempNinja"
-        if (Test-Path $TargetLink) { 
+        Write-Error "CRITICAL: Could not find jom.exe to symlink at $TempJom"
+        if (Test-Path $TargetLink) {
             Write-Host "Cleaning up dead symlink at $TargetLink..." -ForegroundColor Yellow
-            Remove-Item $TargetLink -Force -ErrorAction SilentlyContinue 
+            Remove-Item $TargetLink -Force -ErrorAction SilentlyContinue
         }
         Pop-Location; return
     }
 }
 
-# Ensure fresh Install directory
-if (Test-Path $ninjaInstallDir) {
-    Write-Host "Wiping existing installation at $ninjaInstallDir..." -ForegroundColor Yellow
-    Remove-Item $ninjaInstallDir -Recurse -Force -ErrorAction SilentlyContinue
+# --- Apply Patch qt version changes ---
+$PatchFile = Join-Path $PSScriptRoot "patch\jom_cmake_qt.patch"
+if (Test-Path $PatchFile) {
+    Write-Host "[PATCH] Verifying custom CMake modifications..." -ForegroundColor Cyan
+    
+    # 1. Perform a Dry-Run (--check)
+    # --ignore-space-change handles the Windows/Linux line-ending (CRLF/LF) headaches
+    git apply --check --ignore-space-change "$PatchFile"
+    
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "[PATCH] Verification successful. Applying patch..." -ForegroundColor Green
+        
+        # 2. Actually apply the patch
+        git apply --ignore-space-change --verbose "$PatchFile"
+        
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "CRITICAL: Patch verification passed but application failed!"
+            Pop-Location; return
+        }
+    }
+    else {
+        # The check failed, which usually means the repo has changed 
+        # or the patch was already partially applied (unlikely after git reset --hard)
+        Write-Warning "[PATCH] Patch verification failed. The source may have changed upstream."
+        Write-Host "Check the patch file for conflicts or update the patch." -ForegroundColor Yellow
+        
+        # In a strict build-chain, you might want to stop here:
+        Pop-Location; return
+    }
 }
 
-Write-Host "[INSTALL] Creating fresh directory: $ninjaBinPath" -ForegroundColor Cyan
-New-Item -Path $ninjaBinPath -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
+# Ensure fresh Install directory
+if (Test-Path $jomInstallDir) {
+    Write-Host "Wiping existing installation at $jomInstallDir..." -ForegroundColor Yellow
+    Remove-Item $jomInstallDir -Recurse -Force -ErrorAction SilentlyContinue
+}
 
-# Ensure fresh build directory
+Write-Host "[INSTALL] Creating fresh directory: $jomBinPath" -ForegroundColor Cyan
+New-Item -Path $jomBinPath -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
+
 if (Test-Path $BuildDir) { Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue }
 New-Item -Path $BuildDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
 
@@ -349,46 +388,44 @@ cmake -G "Ninja" `
     -DCMAKE_POLICY_DEFAULT_CMP0091=NEW `
     -DCMAKE_POLICY_DEFAULT_CMP0109=NEW `
     -DCMAKE_CXX_COMPILER="clang++" `
-    -DCMAKE_INSTALL_PREFIX="$ninjaInstallDir" `
+    -DCMAKE_INSTALL_PREFIX="$jomInstallDir" `
     -DCMAKE_BUILD_TYPE=Release `
     -DBUILD_TESTING=OFF `
     -DCMAKE_CXX_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
     --no-warn-unused-cli
 
-if ($LASTEXITCODE -ne 0) { Write-Error "ninja CMake configuration failed."; Pop-Location; return }
+if ($LASTEXITCODE -ne 0) { Write-Error "jom CMake configuration failed."; Pop-Location; return }
 
-Write-Host "Building and Installing to $ninjaInstallDir..." -ForegroundColor Green
+Write-Host "Building and Installing to $jomInstallDir..." -ForegroundColor Green
 cmake --build "$BuildDir" --target install --config Release --parallel
 
-if ($LASTEXITCODE -ne 0) { Write-Error "ninja Build failed with exit code $LASTEXITCODE"; Pop-Location; return }
+if ($LASTEXITCODE -ne 0) { Write-Error "jom Build failed with exit code $LASTEXITCODE"; Pop-Location; return }
 
-Write-Host "Successfully built and installed ninja to $ninjaInstallDir!" -ForegroundColor Green
+Write-Host "Successfully built and installed jom to $jomInstallDir!" -ForegroundColor Green
 
 # Cleanup temporary build debris
 Remove-Item $BuildDir -Recurse -Force -ErrorAction SilentlyContinue
-if (Test-Path $TempNinjaDir) {
-    Write-Host "Releasing old temp directory: $TempNinjaBinDir" -ForegroundColor Cyan
+if (Test-Path $TempJomDir) {
+    Write-Host "Releasing old temp directory..." -ForegroundColor Cyan
     # Give the OS a heartbeat to release file handles
     Start-Sleep -Milliseconds 500
-    Remove-Item $TempNinjaDir -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item $TempJomDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 # Generate Environment Helper with Clean Paths
-$ninjaBinPath = $ninjaBinPath.TrimEnd('\')
-$ninjaInstallDir = $ninjaInstallDir.TrimEnd('\')
+$jomBinPath = $jomBinPath.TrimEnd('\')
+$jomInstallDir = $jomInstallDir.TrimEnd('\')
 
 # --- 9. Symlink to Global Binaries ---
-$ninjaExePath = Join-Path $ninjaInstallDir "ninja.exe"
-if (-not (Test-Path $ninjaExePath)) { $ninjaExePath = Join-Path $ninjaBinPath "ninja.exe" }
+$jomExePath = Join-Path $jomInstallDir "jom.exe"
+if (-not (Test-Path $jomExePath)) { $jomExePath = Join-Path $jomBinPath "jom.exe" }
 
-if (Test-Path $ninjaExePath) {
-    # Ninja --version usually returns a single string like "1.12.1" or "1.12.1.git"
-    $rawVersion = (& $ninjaExePath --version).Trim()
-    # We extract only the numeric part (e.g., 1.12.1) so [version] can handle it
-    if ($rawVersion -match '^(\d+\.\d+\.\d+)') { $localVersion = $Matches[1] } else { $localVersion = "0.0.0" }
-
+if (Test-Path $jomExePath) {
+    $rawVersion = (& $jomExePath /VERSION 2>&1 | Select-Object -First 1).ToString().Trim()
+    if ($rawVersion -match 'jom(?:\s+version)?\s+(\d+\.\d+\.\d+)') { $localVersion = $Matches[1] } else { $localVersion = "0.0.0" }
+    
     # Save new version state
-    $ninjaVersion = $localVersion
+    $jomVersion = $localVersion
     $versionInfo = @{
         url        = $url;
         tag_name   = $tag_name;
@@ -402,64 +439,64 @@ if (Test-Path $ninjaExePath) {
     $versionInfo | ConvertTo-Json | Out-File -FilePath $versionFile -Encoding utf8 -Force
 
     Write-Host "Creating global symlink: $TargetLink" -ForegroundColor Cyan
-
+    
     # Remove existing symlink we are creating a new one
     if (Test-Path $TargetLink) { Remove-Item $TargetLink -Force -ErrorAction SilentlyContinue }
     
     # Create the Symbolic Link
     try {
-        New-Item -Path $TargetLink -ItemType SymbolicLink -Value $ninjaExePath -ErrorAction Stop | Out-Null
-        Write-Host "[LINKED] Ninja (Global) -> $ninjaExePath" -ForegroundColor Green
+        New-Item -Path $TargetLink -ItemType SymbolicLink -Value $jomExePath -ErrorAction Stop | Out-Null
+        Write-Host "[LINKED] Jom (Global) -> $jomExePath" -ForegroundColor Green
     } catch {
-        New-Item -Path $TargetLink -ItemType HardLink -Value $ninjaExePath | Out-Null
-        Write-Host "[HARDLINKED] Ninja (Global) -> $ninjaExePath" -ForegroundColor Green
+        New-Item -Path $TargetLink -ItemType HardLink -Value $jomExePath | Out-Null
+        Write-Host "[HARDLINKED] Jom (Global) -> $jomExePath" -ForegroundColor Green
     }
     
-    Write-Host "[LINKED] Ninja is now globally available via %BINARIES_PATH%" -ForegroundColor Green
-
+    Write-Host "[LINKED] Jom is now globally available via %BINARIES_PATH%" -ForegroundColor Green
+    
     # --- 10. Create Environment Helper ---
     Write-Host "Generating environment helper script..." -ForegroundColor Cyan
     $EnvContent = @'
-# NINJA Environment Setup
-$ninjaroot = "VALUE_ROOT_PATH"
-$ninjabin = "VALUE_BIN_PATH"
-$ninjaexe = "VALUE_EXE_PATH"
-$ninjaversion = "VALUE_VERSION"
-$env:NINJA_PATH = $ninjaroot
-$env:NINJA_ROOT = $ninjaroot
-$env:NINJA_BIN = $ninjabin
-$env:BINARY_NINJA = $ninjaexe
-if ($env:PATH -notlike "*$ninjabin*") { $env:PATH = $ninjabin + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") }
-Write-Host "Ninja Environment Loaded (Version: $ninjaversion) (Bin: $ninjabin)" -ForegroundColor Green
-Write-Host "NINJA_ROOT: $env:NINJA_ROOT" -ForegroundColor Gray
-'@  -replace "VALUE_BIN_PATH", $ninjaBinPath `
-    -replace "VALUE_EXE_PATH", $ninjaExePath `
-    -replace "VALUE_ROOT_PATH", $ninjaInstallDir `
-    -replace "VALUE_VERSION", $ninjaVersion
+# JOM Environment Setup
+$jomroot = "VALUE_ROOT_PATH"
+$jombin = "VALUE_BIN_PATH"
+$jomexe = "VALUE_EXE_PATH"
+$jomversion = "VALUE_VERSION"
+$env:JOM_PATH = $jomroot
+$env:JOM_ROOT = $jomroot
+$env:JOM_BIN = $jombin
+$env:BINARY_JOM = $jomexe
+if ($env:PATH -notlike "*$jombin*") { $env:PATH = $jombin + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") }
+Write-Host "Jom Environment Loaded (Version: $jomversion) (Bin: $jombin)" -ForegroundColor Green
+Write-Host "JOM_ROOT: $env:JOM_ROOT" -ForegroundColor Gray
+'@  -replace "VALUE_BIN_PATH", $jomBinPath `
+    -replace "VALUE_EXE_PATH", $jomExePath `
+    -replace "VALUE_ROOT_PATH", $jomInstallDir `
+    -replace "VALUE_VERSION", $jomVersion
 
-    $EnvContent | Out-File -FilePath $ninjaEnvScript -Encoding utf8 -force
-    Write-Host "Created: $ninjaEnvScript" -ForegroundColor Gray
-
+    $EnvContent | Out-File -FilePath $jomEnvScript -Encoding utf8 -force
+    Write-Host "Created: $jomEnvScript" -ForegroundColor Gray
+    
     # Update Current Session
-    if (Test-Path $ninjaEnvScript) { . $ninjaEnvScript } else {
-        Write-Error "ninja build install finished but $ninjaEnvScript was not created."
+    if (Test-Path $jomEnvScript) { . $jomEnvScript } else {
+        Write-Error "jom build install finished but $jomEnvScript was not created.";
         Pop-Location; return
     }
 
-    Write-Host "Ninja Version: $(& $ninjaExePath --version)" -ForegroundColor Gray
+    Write-Host "Jom Version: $(& $jomExePath /VERSION 2>&1 | Select-Object -First 1)" -ForegroundColor Gray
     
-    if ($NinjaWithMachineEnvironment)
+    if ($JomWithMachineEnvironment)
     {
         # Generating Machine Environment wich add to the persist registry machine Environment
         $MachineEnvContent = @'
-# Ninja Machine Environment Setup
+# Jom Machine Environment Setup
 
 # --- 0. Self-Elevation Logic ---
 $IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 $ScopeColor = "Cyan"
 
 if (-not $IsAdmin) {
-    Write-Host "Elevation required to set ninja system variables. Relaunching as Administrator..." -ForegroundColor Yellow
+    Write-Host "Elevation required to set jom system variables. Relaunching as Administrator..." -ForegroundColor Yellow
     # Pass the parameters to the elevated process so they aren't lost
     $Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
     foreach ($Parameter in $PSBoundParameters.GetEnumerator()) {
@@ -481,9 +518,9 @@ if (-not $IsAdmin) {
     exit
 }
 
-$ninjaroot = "VALUE_ROOT_PATH"
-$ninjabin = "VALUE_BIN_PATH"
-$ninjaversion = "VALUE_VERSION"
+$jomroot = "VALUE_ROOT_PATH"
+$jombin = "VALUE_BIN_PATH"
+$jomversion = "VALUE_VERSION"
 
 $TargetScope = if ($IsAdmin) { "Machine" } else { "User" }
 $RegPath = if ($IsAdmin) { "System\CurrentControlSet\Control\Session Manager\Environment" } else { "Environment" }
@@ -495,19 +532,19 @@ $RegKey = [Microsoft.Win32.Registry]::$RegRoot.OpenSubKey($RegPath, $true)
 # Open the registry key directly to read the RAW (unexpanded) string
 $CurrentRawPath = $RegKey.GetValue("TOOLS_PATH", "", [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
 
-# Cleanup: Remove empty strings, any path containing $ninjaroot, and the current target (to avoid dups)
+# Cleanup: Remove empty strings, any path containing $jomroot, and the current target (to avoid dups)
 $CleanedPathList = $CurrentRawPath -split ';' | Where-Object { 
     -not [string]::IsNullOrWhitespace($_) -and 
-    $_ -notlike "*$ninjaroot*"
+    $_ -notlike "*$jomroot*"
 }
 
 $NewRawPath = ($CleanedPathList -join ";").Replace(";;", ";")
 
-$TargetPath = $ninjabin
+$TargetPath = $jombin
 
 # Rebuild
 $NewRawPath = ($NewRawPath + ";" + $TargetPath + ";").Replace(";;", ";")
-Write-Host "[UPDATED] ($TargetScope) '$ninjabin' synced in TOOLS_PATH" -ForegroundColor $ScopeColor
+Write-Host "[UPDATED] ($TargetScope) '$jombin' synced in TOOLS_PATH" -ForegroundColor $ScopeColor
 
 # Save as ExpandString
 $RegKey.SetValue("TOOLS_PATH", $NewRawPath, [Microsoft.Win32.RegistryValueKind]::ExpandString)
@@ -515,42 +552,42 @@ $env:TOOLS_PATH = $NewRawPath
 
 $RegKey.Close()
 
-$env:NINJA_ROOT = $ninjaroot
-Write-Host "Ninja Environment Loaded (Version: $ninjaversion) (Bin: $ninjabin)" -ForegroundColor Green
-Write-Host "NINJA_ROOT: $env:NINJA_ROOT" -ForegroundColor Gray
-'@  -replace "VALUE_ROOT_PATH", $ninjaInstallDir `
-    -replace "VALUE_BIN_PATH", $ninjaBinPath `
-    -replace "VALUE_VERSION", $ninjaVersion
+$env:JOM_ROOT = $jomroot
+Write-Host "Jom Environment Loaded (Version: $jomversion) (Bin: $jombin)" -ForegroundColor Green
+Write-Host "JOM_ROOT: $env:JOM_ROOT" -ForegroundColor Gray
+'@  -replace "VALUE_ROOT_PATH", $jomInstallDir `
+    -replace "VALUE_BIN_PATH", $jomBinPath `
+    -replace "VALUE_VERSION", $jomVersion
 
-        $MachineEnvContent | Out-File -FilePath $ninjaMachineEnvScript -Encoding utf8 -force
-        Write-Host "Created: $ninjaMachineEnvScript" -ForegroundColor Gray
+        $MachineEnvContent | Out-File -FilePath $jomMachineEnvScript -Encoding utf8 -force
+        Write-Host "Created: $jomMachineEnvScript" -ForegroundColor Gray
         
         # --- Interaction: Prompt to apply persistent changes ---
         Write-Host ""
-        $choice = Read-Host "Do you want to run the Machine Environment script now to persist Ninja changes to the Registry? (y/n)"
+        $choice = Read-Host "Do you want to run the Machine Environment script now to persist jom changes to the Registry? (y/n)"
         if ($choice -eq 'y' -or $choice -eq 'Y') {
-            Write-Host "Executing $ninjaMachineEnvScript..." -ForegroundColor Yellow
+            Write-Host "Executing $jomMachineEnvScript..." -ForegroundColor Yellow
             try {
                 # Start the generated script. It handles its own elevation logic.
-                & $ninjaMachineEnvScript
+                & $jomMachineEnvScript
             }
             catch {
                 Write-Error "Failed to execute the Machine Environment script: $($_.Exception.Message)"
             }
         }
         else {
-            Write-Host "Skipped persistent registry update. You can run it later at: $ninjaMachineEnvScript" -ForegroundColor Gray
+            Write-Host "Skipped persistent registry update. You can run it later at: $jomMachineEnvScript" -ForegroundColor Gray
         }
     }
-
+    
     # --- Return to Start ---
     Pop-Location
     Write-Host "Successfully Done! and returned to: $(Get-Location)" -ForegroundColor DarkGreen
 } else {
-    Write-Error "ninja.exe was not found in the $ninjaBinPath folder."
-    if (Test-Path $TargetLink) { 
+    Write-Error "jom.exe was not found in the $jomBinPath folder."
+    if (Test-Path $TargetLink) {
         Write-Host "Cleaning up dead symlink at $TargetLink..." -ForegroundColor Yellow
-        Remove-Item $TargetLink -Force -ErrorAction SilentlyContinue 
+        Remove-Item $TargetLink -Force -ErrorAction SilentlyContinue
     }
     Pop-Location; return
 }

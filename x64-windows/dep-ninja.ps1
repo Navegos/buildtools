@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/dep-ninja.ps1
 # created: 2026-03-02
-# lastModified: 2026-04-26
+# lastModified: 2026-05-03
 
 param (
     [Parameter(HelpMessage = "Path for ninja storage", Mandatory = $false)]
@@ -166,11 +166,21 @@ Write-Host "[REMOVED] ($TargetScope) all '*$ninjaroot*' removed from TOOLS_PATH"
         Remove-Item $InstallPath -Recurse -Force -ErrorAction SilentlyContinue
     }
     
+    if (Test-Path $TargetLink) { Remove-Item $TargetLink -Force -ErrorAction SilentlyContinue; Write-Host "  [REMOVED] Link: ninja.exe" -ForegroundColor Gray }
+    
     # remove local Env variables for current session
-    Get-ChildItem Env:\NINJA_PATH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\NINJA_ROOT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\NINJA_BIN* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\NINJA_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_NINJA* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
 
+    $CurrentPath = $env:PATH
+    $CleanedPathList = $CurrentPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewPath = ($CleanedPathList -join ";").Replace(";;", ";")
+    $NewPath = ($NewPath + ";").Replace(";;", ";")
+    $env:PATH = $NewPath
+    
     Write-Host "--- Ninja Purge Complete ---" -ForegroundColor Green
 }
 

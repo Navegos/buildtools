@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/dep-cuda.ps1
 # created: 2026-03-14
-# lastModified: 2026-04-26
+# lastModified: 2026-05-03
 
 param (
     [Parameter(HelpMessage = "Base path for cuda storage like path\cuda", Mandatory = $false)]
@@ -47,7 +47,7 @@ $CudaDontUpdate = $dontUpdate
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
-    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
+    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
     return
 }
 
@@ -73,71 +73,31 @@ $remotecudssVersion = $cudssVersion
 $remotecutensorVersion = $cutensorVersion
 $remotecusparseltVersion = $cusparseltVersion
 $remotecudnnVersion = $cudnnVersion
+$remotetensorrtVersion = "0.0.0"
+
+$redistrib = @(
+    @{ Name = "CUDA";        Url = $baseRedistUrl;           Var = "remoteVersion";           Fallback = $cudaVersion },
+    @{ Name = "CUDSS";       Url = $basecudssRedistUrl;      Var = "remotecudssVersion";      Fallback = $cudssVersion },
+    @{ Name = "CUTENSOR";    Url = $basecutensorRedistUrl;   Var = "remotecutensorVersion";   Fallback = $cutensorVersion },
+    @{ Name = "CUSPARSE_LT"; Url = $basecusparseltRedistUrl; Var = "remotecusparseltVersion"; Fallback = $cusparseltVersion },
+    @{ Name = "CUDNN";       Url = $basecudnnRedistUrl;      Var = "remotecudnnVersion";      Fallback = $cudnnVersion }
+)
 
 $regex = 'redistrib_(\d+\.\d+\.\d+)\.json'
-try {
-    Write-Host "Scanning NVIDIA CUDA Redist repository for latest manifest..." -ForegroundColor Gray
-    $webIndex = Invoke-WebRequest -Uri $baseRedistUrl -UseBasicParsing
-    $availableVersions = [regex]::Matches($webIndex.Content, $regex) | ForEach-Object { $_.Groups[1].Value } | Sort-Object { [version]$_ } -Descending
-    
-    if ($availableVersions.Count -gt 0) {
-        $remoteVersion = $availableVersions[0]
-    }
-}
-catch {
-    Write-Warning "NVIDIA CUDA Redist Discovery failed. Falling back to $cudaVersion"
-}
 
-try {
-    Write-Host "Scanning NVIDIA CUDSS Redist repository for latest manifest..." -ForegroundColor Gray
-    $webIndex = Invoke-WebRequest -Uri $basecudssRedistUrl -UseBasicParsing
-    $availableVersions = [regex]::Matches($webIndex.Content, $regex) | ForEach-Object { $_.Groups[1].Value } | Sort-Object { [version]$_ } -Descending
-    
-    if ($availableVersions.Count -gt 0) {
-        $remotecudssVersion = $availableVersions[0]
+foreach ($comp in $redistrib) {
+    try {
+        Write-Host "Scanning NVIDIA $($comp.Name) Redist repository for latest manifest..." -ForegroundColor Gray
+        $webIndex = Invoke-WebRequest -Uri $comp.Url -UseBasicParsing
+        $availableVersions = [regex]::Matches($webIndex.Content, $regex) | ForEach-Object { $_.Groups[1].Value } | Sort-Object { [version]$_ } -Descending
+        
+        if ($availableVersions.Count -gt 0) {
+            Set-Variable -Name $comp.Var -Value $availableVersions[0]
+        }
     }
-}
-catch {
-    Write-Warning "NVIDIA CUDSS Redist Discovery failed. Falling back to $cudssVersion"
-}
-
-try {
-    Write-Host "Scanning NVIDIA CUTENSOR Redist repository for latest manifest..." -ForegroundColor Gray
-    $webIndex = Invoke-WebRequest -Uri $basecutensorRedistUrl -UseBasicParsing
-    $availableVersions = [regex]::Matches($webIndex.Content, $regex) | ForEach-Object { $_.Groups[1].Value } | Sort-Object { [version]$_ } -Descending
-    
-    if ($availableVersions.Count -gt 0) {
-        $remotecutensorVersion = $availableVersions[0]
+    catch {
+        Write-Warning "NVIDIA $($comp.Name) Redist Discovery failed. Falling back to $($comp.Fallback)"
     }
-}
-catch {
-    Write-Warning "NVIDIA CUTENSOR Redist Discovery failed. Falling back to $cutensorVersion"
-}
-
-try {
-    Write-Host "Scanning NVIDIA CUSPARSE_LT Redist repository for latest manifest..." -ForegroundColor Gray
-    $webIndex = Invoke-WebRequest -Uri $basecusparseltRedistUrl -UseBasicParsing
-    $availableVersions = [regex]::Matches($webIndex.Content, $regex) | ForEach-Object { $_.Groups[1].Value } | Sort-Object { [version]$_ } -Descending
-    
-    if ($availableVersions.Count -gt 0) {
-        $remotecusparseltVersion = $availableVersions[0]
-    }
-}
-catch {
-    Write-Warning "NVIDIA CUSPARSE_LT Redist Discovery failed. Falling back to $cusparseltVersion"
-}
-
-try {
-    Write-Host "Scanning NVIDIA CUDNN Redist repository for latest manifest..." -ForegroundColor Gray
-    $webIndex = Invoke-WebRequest -Uri $basecudnnRedistUrl -UseBasicParsing
-    $availableVersions = [regex]::Matches($webIndex.Content, $regex) | ForEach-Object { $_.Groups[1].Value } | Sort-Object { [version]$_ } -Descending
-    
-    if ($availableVersions.Count -gt 0) {
-        $remotecudnnVersion = $availableVersions[0]
-    }
-}
-catch {
-    Write-Warning "NVIDIA CUDNN Redist Discovery failed. Falling back to $cudnnVersion"
 }
 
 # --- 3. Local Version Detection ---
@@ -147,6 +107,7 @@ $localcudssVersion = "0.0.0"
 $localcutensorVersion = "0.0.0"
 $localcusparseltVersion = "0.0.0"
 $localcudnnVersion = "0.0.0"
+$localtensorrtVersion = "0.0.0"
 
 # Initial pathing based on input param
 $cudaSplit = $cudaVersion.Split('.')
@@ -165,6 +126,9 @@ if (Test-Path $versionFile) {
     $localcutensorVersion = (Get-Content $versionFile | ConvertFrom-Json).libcutensor.version
     $localcusparseltVersion = (Get-Content $versionFile | ConvertFrom-Json).libcusparse_lt.version
     $localcudnnVersion = (Get-Content $versionFile | ConvertFrom-Json).cudnn.version
+    if ($withTensorRT) {
+        $localtensorrtVersion = (Get-Content $versionFile | ConvertFrom-Json).tensorrt.version
+    }
 }
 
 # Comparison
@@ -173,11 +137,25 @@ $vLocalcudss = [version]$localcudssVersion
 $vLocalcutensor = [version]$localcutensorVersion
 $vLocalcusparselt = [version]$localcusparseltVersion
 $vLocalcudnn = [version]$localcudnnVersion
+if ($withTensorRT) {
+    $vLocaltensorrt = [version]$localtensorrtVersion
+}
 $vRemote = [version]$remoteVersion
 $vRemotecudss = [version]$remotecudssVersion
 $vRemotecutensor = [version]$remotecutensorVersion
 $vRemotecusparselt = [version]$remotecusparseltVersion
 $vRemotecudnn = [version]$remotecudnnVersion
+# In case TensorRT is included in the installation but version detection depends from user input, we want to make sure to trigger an update if the user has a version of TensorRT that is too old even if CUDA itself is up to date
+if ($withTensorRT) {
+    $vRemotetensorrt = [version]$remotetensorrtVersion
+}
+
+$GlobalBinDir = "$env:BINARIES_PATH"
+$cudatools = @("__nvcc_device_query.exe", "bin2c.exe", "ctadvisor.exe", "cu++filt.exe", "cudafe++.exe", "cuobjdump.exe",
+               "fatbinary.exe", "nvcc.exe", "nvdisasm.exe", "nvlink.exe", "nvprune.exe", "ptxas.exe", "cicc.exe",
+               "compute-sanitizer.exe", "tileiras.exe", "trtexec.exe")
+$nvvmcicctool = "cicc.exe"
+$computesanitizertool = "compute-sanitizer.exe"
 
 function Invoke-CudaVersionPurge {
     param (
@@ -348,15 +326,54 @@ Write-Host "[REMOVED] ($TargetScope) all '*$verPath*' removed from NVIDIA_PATH" 
     }
     
     # remove local Env variables for current session
-    Get-ChildItem Env:\CUDA_HOME* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CUDA_PATH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CUDA_PATH_V* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CUDA_TOOLKIT_ROOT_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CUDA_ROOT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CUDA_BIN* | Remove-Item -ErrorAction SilentlyContinue 
-    Get-ChildItem Env:\CUDA_INCLUDE_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CUDA_LIBRARY_DIR* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CUDA_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\CUDSS_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\CUTENSOR_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\CUSPARSELT_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\CUDNN_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\TENSORRT_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    
+    foreach ($cudatool in $cudatools) {
+        $target = Join-Path $GlobalBinDir $cudatool
+        if (Test-Path $target) { Remove-Item $target -Force -ErrorAction SilentlyContinue; Write-Host "  [REMOVED] Link: $cudatool" -ForegroundColor Gray }
+    }
 
+    $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
+    $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$fullInstallDir*"
+    }
+    $NewCMakePrefixPath = ($CleanedCMakePrefixPathList -join ";").Replace(";;", ";")
+    $NewCMakePrefixPath = ($NewCMakePrefixPath + ";").Replace(";;", ";")
+    $env:CMAKE_PREFIX_PATH = $NewCMakePrefixPath
+    
+    $CurrentIncludePath = $env:INCLUDE
+    $CleanedIncludePathList = $CurrentIncludePath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$fullInstallDir*"
+    }
+    $NewIncludePath = ($CleanedIncludePathList -join ";").Replace(";;", ";")
+    $NewIncludePath = ($NewIncludePath + ";").Replace(";;", ";")
+    $env:INCLUDE = $NewIncludePath
+    
+    $CurrentLibPath = $env:LIB
+    $CleanedLibPathList = $CurrentLibPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$fullInstallDir*"
+    }
+    $NewLibPath = ($CleanedLibPathList -join ";").Replace(";;", ";")
+    $NewLibPath = ($NewLibPath + ";").Replace(";;", ";")
+    $env:LIB = $NewLibPath
+    
+    $CurrentPath = $env:PATH
+    $CleanedPathList = $CurrentPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$fullInstallDir*"
+    }
+    $NewPath = ($CleanedPathList -join ";").Replace(";;", ";")
+    $NewPath = ($NewPath + ";").Replace(";;", ";")
+    $env:PATH = $NewPath
+    
     Write-Host "--- Purge Complete for $verPath ---" -ForegroundColor Green
 }
 
@@ -387,11 +404,13 @@ if ($CudaForceCleanup -or ($vLocal -lt $vRemote -and -not $CudaDontUpdate)) {
     $localcutensorVersion = "0.0.0"
     $localcusparseltVersion = "0.0.0"
     $localcudnnVersion = "0.0.0"
+    $localtensorrtVersion = "0.0.0"
     $vLocal = [version]"0.0.0"
     $vLocalcudss = [version]"0.0.0"
     $vLocalcutensor = [version]"0.0.0"
     $vLocalcusparselt = [version]"0.0.0"
     $vLocalcudnn = [version]"0.0.0"
+    $vLocaltensorrt = [version]"0.0.0"
 }
 
 # We are installing new version if forcing cleanup
@@ -409,6 +428,9 @@ if ($CudaDontUpdate -and -not $CudaForceCleanup) {
     $cutensorVersion = $localcutensorVersion
     $cusparseltVersion = $localcusparseltVersion
     $cudnnVersion = $localcudnnVersion
+    if ($withTensorRT) {
+        $tensorrtVersion = $localtensorrtVersion
+    }
 }
 elseif ($vLocal -lt $vRemote) {
     $cudaVersion = $remoteVersion
@@ -424,6 +446,10 @@ elseif ($vLocal -lt $vRemote) {
     if ($vLocalcutensor -lt $vRemotecutensor) { $cutensorVersion = $remotecutensorVersion }
     if ($vLocalcusparselt -lt $vRemotecusparselt) { $cusparseltVersion = $remotecusparseltVersion }
     if ($vLocalcudnn -lt $vRemotecudnn) { $cudnnVersion = $remotecudnnVersion }
+    # Special case for TensorRT since it's an optional component that may trigger an update if the user has it but it's not up to date even if CUDA itself is up to date
+    if ($withTensorRT) {
+        if ($vLocaltensorrt -lt $vRemotetensorrt) { $tensorrtVersion = $remotetensorrtVersion }
+    }
 }
 
 # Synchronize the main variable for the rest of the script
@@ -437,14 +463,6 @@ $cudanvvmPath = Join-Path $cudaInstallDir "nvvm"
 $cudanvvmBinPath = Join-Path $cudanvvmPath "bin"
 $computesanitizerPath = Join-Path $cudaInstallDir "compute-sanitizer"
 
-# if Symlink present delete
-$GlobalBinDir = "$env:BINARIES_PATH"
-# Remove existing symlink we are creating a new one
-$cudatools = @("__nvcc_device_query.exe", "bin2c.exe", "ctadvisor.exe", "cu++filt.exe", "cudafe++.exe", "cuobjdump.exe",
-               "fatbinary.exe", "nvcc.exe", "nvdisasm.exe", "nvlink.exe", "nvprune.exe", "ptxas.exe", "cicc.exe",
-               "compute-sanitizer.exe", "tileiras.exe", "trtexec.exe")
-$nvvmcicctool = "cicc.exe"
-$computesanitizertool = "compute-sanitizer.exe"
 foreach ($cudatool in $cudatools) {
     $target = Join-Path $GlobalBinDir $cudatool
     if (Test-Path $target) { Remove-Item $target -Force -ErrorAction SilentlyContinue; Write-Host "  [REMOVED] Link: $cudatool" -ForegroundColor Gray }
@@ -453,6 +471,19 @@ foreach ($cudatool in $cudatools) {
 # --- 4. Install or Skip ---
 if (($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") -or ($CudaDontUpdate -and -not $CudaForceCleanup)) {
     Write-Host "[SKIP] CUDA $localVersion is already installed, up to date, or you skipped update at: $cudaInstallDir" -ForegroundColor Green
+
+    $binaryversion = ([version]$cudaVersion).Major
+    $cudabinaryversion = $binaryversion
+    
+    $cudssbinaryversion = ([version]$cudssVersion).Major
+    $cutensorbinaryversion = ([version]$cutensorVersion).Major
+    $cusparseltbinaryversion = ([version]$cusparseltVersion).Major
+    $cudnnbinaryversion = ([version]$cudnnVersion).Major
+
+    $tensorrtbinaryversion = 0
+    if ($withTensorRT) {
+        $tensorrtbinaryversion = ([version]$tensorrtVersion).Major
+    }
 } else {
     Write-Host "[UPDATE] Local: $localVersion -> Remote: $remoteVersion" -ForegroundColor Yellow
 
@@ -476,19 +507,196 @@ if (($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") -or ($CudaDontUpdate -
         "libcusparse_lt" = @{ url = $basecusparseltRedistUrl;   ver = $cusparseltVersion }
         "cudnn"          = @{ url = $basecudnnRedistUrl;        ver = $cudnnVersion }
     }
-
+    
+    $binaryversion = ([version]$cudaVersion).Major
+    $cudabinaryversion = $binaryversion
     # --- 5. Download, Extract, and Flatten ---
     # Initialize the structure with the top-level CUDA version
     $versionInfo = [ordered]@{
         "cuda" = @{
             "name"              = "CUDA SDK"
-            "version"           = $remoteVersion
+            "version"           = $cudaVersion
             "release_date"      = $manifest.release_date
             "release_label"     = $manifest.release_label
             "release_product"   = $manifest.release_product
+            "abiversion"        = $binaryversion
+            "soversion"         = $binaryversion
             "date"              = (Get-Date).ToString("yyyy-MM-dd")
+            "type"              = "tarbal_redistrib";
         }
     }
+
+    $cudssbinaryversion = 0
+    $cutensorbinaryversion = 0
+    $cusparseltbinaryversion = 0
+    $cudnnbinaryversion = 0
+    $tensorrtbinaryversion = 0
+    
+    # --- 5b. Manual TensorRT Installation (User-Assisted) ---
+    if ($withTensorRT) {
+        if ([string]::IsNullOrWhitespace($tensorrtLink)) {
+            Write-Host "--- Processing TensorRT Package ---" -ForegroundColor Cyan
+
+            $trtFileName = $null
+            $trtZipFile = $null
+            $trtTempExtract = Join-Path $env:TEMP "trt_temp_$(Get-Random)"
+            
+            # Dynamically resolve Downloads folder in case the user relocated it (e.g., to D:\Downloads)
+            $downloadsFolder = (New-Object -ComObject Shell.Application).NameSpace('shell:Downloads').Self.Path
+            if (-not (Test-Path $downloadsFolder)) { $downloadsFolder = [System.IO.Path]::Combine($env:USERPROFILE, "Downloads") }
+            
+            # 1. Check if the user already has the file in Temp (skip download UI)
+            $existingTemp = Get-ChildItem -Path $env:TEMP -Filter "TensorRT-*.Windows.amd64.cuda-$cudamajorMinor.zip" -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            if ($existingTemp) {
+                $trtFileName = $existingTemp.Name
+                $trtZipFile = $existingTemp.FullName
+            }
+            
+            if ([string]::IsNullOrWhitespace($trtZipFile) -or -not (Test-Path $trtZipFile)) {
+                Write-Host "Action Required: NVIDIA gated login detected." -ForegroundColor Yellow
+                Write-Host "1. Opening TensorRT Download Page..." -ForegroundColor Gray
+                Start-Process "https://developer.nvidia.com/tensorrt/"
+
+                Write-Host "2. Please Login and download the TensorRT ZIP for CUDA $cudamajorMinor." -ForegroundColor White
+                Write-Host "Waiting 30 minutes for download to finish in $downloadsFolder..." -ForegroundColor Gray
+
+                $captured = $null
+                $timeout = 0
+                while ($null -eq $captured -and $timeout -lt 1800) {
+                    # 30 minute timeout
+                    $latest = Get-ChildItem -Path $downloadsFolder -Filter "TensorRT-*.Windows.amd64.cuda-$cudamajorMinor.zip" | 
+                    Where-Object { $_.Name -notmatch '\.(crdownload|part|tmp)$' } | 
+                    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+
+                    if ($latest) {
+                        try {
+                            # Check if file is unlocked/finished
+                            $stream = [System.IO.File]::Open($latest.FullName, 'Open', 'Read', 'None')
+                            $stream.Close()
+                            $captured = $latest
+                        }
+                        catch { Start-Sleep -Seconds 2 }
+                    }
+                    Write-Host "." -NoNewline
+                    Start-Sleep -Seconds 3
+                    $timeout += 3
+                }
+
+                if ($captured) {
+                    Write-Host "`n[CAPTURED] $($captured.Name)" -ForegroundColor Green
+                    $trtFileName = $($captured.Name)
+                    $trtZipFile = Join-Path $env:TEMP $trtFileName
+                    Move-Item -Path $captured.FullName -Destination $trtZipFile -Force
+                }
+                else {
+                    Write-Error "TensorRT download timeout. Skipping TensorRT integration."
+                    return
+                }
+            }
+            
+            Write-Host "Extracting TensorRT..." -ForegroundColor Gray
+            if (-not (Test-Path $trtTempExtract)) { New-Item -Path $trtTempExtract -ItemType Directory }
+            Expand-Archive -Path $trtZipFile -DestinationPath $trtTempExtract -Force
+            
+            # Flatten TensorRT structure into the CUDA Install Dir
+            # Most TRT zips have a single root folder like TensorRT-10.x.x.x/
+            $trtRoot = Get-ChildItem -Path $trtTempExtract -Directory | Select-Object -First 1
+            if ($trtRoot) {
+                Write-Host "Merging TensorRT files into $cudaInstallDir..." -ForegroundColor Gray
+                Get-ChildItem -Path $trtRoot.FullName | ForEach-Object {
+                    $destPath = Join-Path $cudaInstallDir $_.Name
+                    if ($_.PSIsContainer -and (Test-Path $destPath)) {
+                        # Merge folders (bin, lib, include)
+                        Copy-Item -Path "$($_.FullName)\*" -Destination $destPath -Recurse -Force -ErrorAction SilentlyContinue
+                    }
+                    else {
+                        # Copy files (READMEs, LICENSEs)
+                        Copy-Item -Path $_.FullName -Destination $cudaInstallDir -Recurse -Force -ErrorAction SilentlyContinue
+                    }
+                }
+                
+                $releaseversion = ($trtRoot.Name -replace "TensorRT-", "")
+                $tensorrtVersion = $releaseversion
+                $tensorrtbinaryversion = $([version]$tensorrtVersion).Major
+                # Update Metadata
+                $versionInfo["tensorrt"] = @{
+                    "name"            = "NVIDIA TensorRT"
+                    "version"         = $tensorrtVersion
+                    "release_date"    = (Get-Date).ToString("yyyy-MM-dd")
+                    "release_label"   = $tensorrtVersion
+                    "release_product" = "tensorrt"
+                    "abiversion"      = $tensorrtbinaryversion
+                    "soversion"       = $tensorrtbinaryversion
+                    "date"            = (Get-Date).ToString("yyyy-MM-dd")
+                    "type"            = "User-SLA-Download TensorRT (NVIDIA Developer Portal)"
+                }
+            }
+        
+            # Cleanup
+            Remove-Item $trtZipFile, $trtTempExtract -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Host "[SUCCESS] TensorRT integrated." -ForegroundColor Green
+
+        }
+        elseif (-not [string]::IsNullOrWhitespace($tensorrtLink) -and $tensorrtLink -like "TensorRT-*.Windows.amd64.cuda-$cudamajorMinor.zip") {
+            Write-Host "--- Processing TensorRT Package ---" -ForegroundColor Cyan
+            
+            # Extract version from filename (e.g., TensorRT-10.16.0.72)
+            $trtFileName = Split-Path $tensorrtLink -Leaf
+            $trtZipFile = Join-Path $env:TEMP $trtFileName
+            $trtTempExtract = Join-Path $env:TEMP "trt_temp_$(Get-Random)"
+            
+            Write-Host "Downloading TensorRT from $tensorrtLink..." -ForegroundColor Yellow
+            Invoke-WebRequest -Uri $tensorrtLink -OutFile $trtZipFile -UseBasicParsing
+        
+            Write-Host "Extracting TensorRT..." -ForegroundColor Gray
+            if (-not (Test-Path $trtTempExtract)) { New-Item -Path $trtTempExtract -ItemType Directory }
+            Expand-Archive -Path $trtZipFile -DestinationPath $trtTempExtract -Force
+        
+            # Flatten TensorRT structure into the CUDA Install Dir
+            # Most TRT zips have a single root folder like TensorRT-10.x.x.x/
+            $trtRoot = Get-ChildItem -Path $trtTempExtract -Directory | Select-Object -First 1
+            if ($trtRoot) {
+                Write-Host "Merging TensorRT files into $cudaInstallDir..." -ForegroundColor Gray
+                Get-ChildItem -Path $trtRoot.FullName | ForEach-Object {
+                    $destPath = Join-Path $cudaInstallDir $_.Name
+                    if ($_.PSIsContainer -and (Test-Path $destPath)) {
+                        # Merge folders (bin, lib, include)
+                        Copy-Item -Path "$($_.FullName)\*" -Destination $destPath -Recurse -Force -ErrorAction SilentlyContinue
+                    }
+                    else {
+                        # Copy files (READMEs, LICENSEs)
+                        Copy-Item -Path $_.FullName -Destination $cudaInstallDir -Recurse -Force -ErrorAction SilentlyContinue
+                    }
+                }
+                
+                $releaseversion = ($trtRoot.Name -replace "TensorRT-", "")
+                $tensorrtVersion = $releaseversion
+                $tensorrtbinaryversion = $([version]$tensorrtVersion).Major
+                # Update Metadata
+                $versionInfo["tensorrt"] = @{
+                    "name"            = "NVIDIA TensorRT"
+                    "version"         = $tensorrtVersion
+                    "release_date"    = (Get-Date).ToString("yyyy-MM-dd")
+                    "release_label"   = $tensorrtVersion
+                    "release_product" = "tensorrt"
+                    "abiversion"      = $tensorrtbinaryversion
+                    "soversion"       = $tensorrtbinaryversion
+                    "date"            = (Get-Date).ToString("yyyy-MM-dd")
+                    "type"            = "User-Link TensorRT (NVIDIA Developer Portal)"
+                }
+            }
+        
+            # Cleanup
+            Remove-Item $trtZipFile, $trtTempExtract -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Host "[SUCCESS] TensorRT integrated." -ForegroundColor Green
+            
+        }
+        else {
+            Write-Error "[SKIP] No TensorRT package provided or detected compatible with CUDA $cudamajorMinor. Skipping TensorRT integration.."
+            return
+        }
+    }
+
     foreach ($comp in $components) {
         # Determine which manifest to use
         $currentBaseUrl = $baseRedistUrl
@@ -531,6 +739,17 @@ if (($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") -or ($CudaDontUpdate -
         $asset = if ($osNode.PSObject.Properties.Name -contains $cudaKey) { $osNode.$cudaKey } else { $osNode }
         
         if ($null -eq $asset -or $null -eq $asset.relative_path) { Write-Warning "Could not find a valid Component for $comp at 'windows-x86_64' asset. Skipping."; continue }
+        
+        $binaryversion = ([version]$currentManifest.release_label).Major
+        if ($comp -eq "libcudss") {
+            $cudssbinaryversion = $binaryversion
+        } elseif ($comp -eq "libcutensor") {
+            $cutensorbinaryversion = $binaryversion
+        } elseif ($comp -eq "libcusparse_lt") {
+            $cusparseltbinaryversion = $binaryversion
+        } elseif ($comp -eq "cudnn") {
+            $cudnnbinaryversion = $binaryversion
+        }
 
         # Add granular metadata to our tracking object
         $versionInfo[$comp] = @{
@@ -539,7 +758,10 @@ if (($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") -or ($CudaDontUpdate -
             "release_date"      = $currentManifest.release_date
             "release_label"     = $currentManifest.release_label
             "release_product"   = $currentManifest.release_product
+            "abiversion"        = $binaryversion
+            "soversion"         = $binaryversion
             "date"              = (Get-Date).ToString("yyyy-MM-dd")
+            "type"              = "tarbal_redistrib";
         }
 
         $downloadUrl = "$currentBaseUrl/$($asset.relative_path)"
@@ -620,152 +842,6 @@ if (($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") -or ($CudaDontUpdate -
         Write-Warning "Optional tool $computesanitizertool not found in $cudaBinPath distribution; skipping symlink."
     }
 
-    # --- 5b. Manual TensorRT Installation (User-Assisted) ---
-    if ($withTensorRT)
-    {
-        if ([string]::IsNullOrWhitespace($tensorrtLink)) {
-            Write-Host "--- Processing TensorRT Package ---" -ForegroundColor Cyan
-
-            $trtFileName = $null
-            $trtZipFile = $null
-            $trtTempExtract = Join-Path $env:TEMP "trt_temp_$(Get-Random)"
-            $downloadsFolder = [System.IO.Path]::Combine($env:USERPROFILE, "Downloads")
-            
-            # 1. Check if the user already has the file in Temp (skip download UI)
-            if (-not (Test-Path $trtZipFile)) {
-                Write-Host "Action Required: NVIDIA gated login detected." -ForegroundColor Yellow
-                Write-Host "1. Opening TensorRT Download Page..." -ForegroundColor Gray
-                Start-Process "https://developer.nvidia.com/tensorrt/"
-
-                Write-Host "2. Please Login and download the TensorRT ZIP for CUDA $cudamajorMinor." -ForegroundColor White
-                Write-Host "Waiting for download to finish in $downloadsFolder..." -ForegroundColor Gray
-
-                $captured = $null
-                $timeout = 0
-                while ($null -eq $captured -and $timeout -lt 300) {
-                    # 5 minute timeout
-                    $latest = Get-ChildItem -Path $downloadsFolder -Filter "TensorRT-*.Windows.amd64.cuda-$cudamajorMinor.zip" | 
-                    Where-Object { $_.Name -notmatch '\.(crdownload|part|tmp)$' } | 
-                    Sort-Object LastWriteTime -Descending | Select-Object -First 1
-
-                    if ($latest) {
-                        try {
-                            # Check if file is unlocked/finished
-                            $stream = [System.IO.File]::Open($latest.FullName, 'Open', 'Read', 'None')
-                            $stream.Close()
-                            $captured = $latest
-                        }
-                        catch { Start-Sleep -Seconds 2 }
-                    }
-                    Write-Host "." -NoNewline
-                    Start-Sleep -Seconds 3
-                    $timeout += 3
-                }
-
-                if ($captured) {
-                    Write-Host "`n[CAPTURED] $($captured.Name)" -ForegroundColor Green
-                    $trtFileName = $($captured.Name)
-                    $trtZipFile = Join-Path $env:TEMP $trtFileName
-                    Move-Item -Path $captured.FullName -Destination $trtZipFile -Force
-                }
-                else {
-                    Write-Error "TensorRT download timeout. Skipping TensorRT integration."
-                    return
-                }
-            }
-            
-            Write-Host "Extracting TensorRT..." -ForegroundColor Gray
-            if (-not (Test-Path $trtTempExtract)) { New-Item -Path $trtTempExtract -ItemType Directory }
-            Expand-Archive -Path $trtZipFile -DestinationPath $trtTempExtract -Force
-            
-            # Flatten TensorRT structure into the CUDA Install Dir
-            # Most TRT zips have a single root folder like TensorRT-10.x.x.x/
-            $trtRoot = Get-ChildItem -Path $trtTempExtract -Directory | Select-Object -First 1
-            if ($trtRoot) {
-                Write-Host "Merging TensorRT files into $cudaInstallDir..." -ForegroundColor Gray
-                Get-ChildItem -Path $trtRoot.FullName | ForEach-Object {
-                    $destPath = Join-Path $cudaInstallDir $_.Name
-                    if ($_.PSIsContainer -and (Test-Path $destPath)) {
-                        # Merge folders (bin, lib, include)
-                        Copy-Item -Path "$($_.FullName)\*" -Destination $destPath -Recurse -Force -ErrorAction SilentlyContinue
-                    }
-                    else {
-                        # Copy files (READMEs, LICENSEs)
-                        Copy-Item -Path $_.FullName -Destination $cudaInstallDir -Recurse -Force -ErrorAction SilentlyContinue
-                    }
-                }
-                
-                $releaseversion = ($trtRoot.Name -replace "TensorRT-", "")
-                # Update Metadata
-                $versionInfo["tensorrt"] = @{
-                    "name"              = "NVIDIA TensorRT"
-                    "version"           = $releaseversion
-                    "source"            = "User-SLA-Download TensorRT (NVIDIA Developer Portal)"
-                    "release_date"      = (Get-Date).ToString("yyyy-MM-dd")
-                    "release_label"     = $releaseversion
-                    "release_product"   = "tensorrt"
-                    "date"              = (Get-Date).ToString("yyyy-MM-dd")
-                }
-            }
-        
-            # Cleanup
-            Remove-Item $trtZipFile, $trtTempExtract -Recurse -Force -ErrorAction SilentlyContinue
-            Write-Host "[SUCCESS] TensorRT integrated." -ForegroundColor Green
-
-        } elseif (-not [string]::IsNullOrWhitespace($tensorrtLink) -and $tensorrtLink -like "TensorRT-*.Windows.amd64.cuda-$cudamajorMinor.zip") {
-            Write-Host "--- Processing TensorRT Package ---" -ForegroundColor Cyan
-            
-            # Extract version from filename (e.g., TensorRT-10.16.0.72)
-            $trtFileName = Split-Path $tensorrtLink -Leaf
-            $trtZipFile = Join-Path $env:TEMP $trtFileName
-            $trtTempExtract = Join-Path $env:TEMP "trt_temp_$(Get-Random)"
-            
-            Write-Host "Downloading TensorRT from $tensorrtLink..." -ForegroundColor Yellow
-            Invoke-WebRequest -Uri $tensorrtLink -OutFile $trtZipFile -UseBasicParsing
-        
-            Write-Host "Extracting TensorRT..." -ForegroundColor Gray
-            if (-not (Test-Path $trtTempExtract)) { New-Item -Path $trtTempExtract -ItemType Directory }
-            Expand-Archive -Path $trtZipFile -DestinationPath $trtTempExtract -Force
-        
-            # Flatten TensorRT structure into the CUDA Install Dir
-            # Most TRT zips have a single root folder like TensorRT-10.x.x.x/
-            $trtRoot = Get-ChildItem -Path $trtTempExtract -Directory | Select-Object -First 1
-            if ($trtRoot) {
-                Write-Host "Merging TensorRT files into $cudaInstallDir..." -ForegroundColor Gray
-                Get-ChildItem -Path $trtRoot.FullName | ForEach-Object {
-                    $destPath = Join-Path $cudaInstallDir $_.Name
-                    if ($_.PSIsContainer -and (Test-Path $destPath)) {
-                        # Merge folders (bin, lib, include)
-                        Copy-Item -Path "$($_.FullName)\*" -Destination $destPath -Recurse -Force -ErrorAction SilentlyContinue
-                    }
-                    else {
-                        # Copy files (READMEs, LICENSEs)
-                        Copy-Item -Path $_.FullName -Destination $cudaInstallDir -Recurse -Force -ErrorAction SilentlyContinue
-                    }
-                }
-                
-                # Update Metadata
-                $versionInfo["tensorrt"] = @{
-                    "name"              = "NVIDIA TensorRT"
-                    "version"           = $releaseversion
-                    "source"            = "User-Link TensorRT (NVIDIA Developer Portal)"
-                    "release_date"      = (Get-Date).ToString("yyyy-MM-dd")
-                    "release_label"     = $releaseversion
-                    "release_product"   = "tensorrt"
-                    "date"              = (Get-Date).ToString("yyyy-MM-dd")
-                }
-            }
-        
-            # Cleanup
-            Remove-Item $trtZipFile, $trtTempExtract -Recurse -Force -ErrorAction SilentlyContinue
-            Write-Host "[SUCCESS] TensorRT integrated." -ForegroundColor Green
-            
-        } else {
-            Write-Error "[SKIP] No TensorRT package provided or detected compatible with CUDA $cudamajorMinor. Skipping TensorRT integration.."
-            return
-        }
-    }
-
     # Finalize Version Metadata File
     $versionInfo | ConvertTo-Json -Depth 5 | Out-File -FilePath $versionFile -Encoding utf8 -Force
     Write-Host "Detailed metadata saved to: $versionFile" -ForegroundColor Gray
@@ -808,6 +884,26 @@ $cudalibx64 = "VALUE_LIBX64_PATH"
 $cudainclude = "VALUE_INCLUDE_PATH"
 $cudacmakepath = "VALUE_CMAKE_PATH"
 $cudaversion = "VALUE_VERSION"
+$cudaabiversion = "VALUE_ABI_VERSION"
+$cudasoversion = "VALUE_SO_VERSION"
+$cudssversion = "VALUE_CUDSS_VERSION"
+$cudssabiversion = "VALUE_CUDSS_ABI_VERSION"
+$cudsssoversion = "VALUE_CUDSS_SO_VERSION"
+$cutensorversion = "VALUE_CUTENSOR_VERSION"
+$cutensorabiversion = "VALUE_CUTENSOR_ABI_VERSION"
+$cutensorsoversion = "VALUE_CUTENSOR_SO_VERSION"
+$cusparseltversion = "VALUE_CUSPARSELT_VERSION"
+$cusparseltabiversion = "VALUE_CUSPARSELT_ABI_VERSION"
+$cusparseltsoversion = "VALUE_CUSPARSELT_SO_VERSION"
+$cudnnversion = "VALUE_CUDNN_VERSION"
+$cudnnabiversion = "VALUE_CUDNN_ABI_VERSION"
+$cudnnsoversion = "VALUE_CUDNN_SO_VERSION"
+$withtensorrt = VALUE_WITH_TENSORRT
+if ($withtensorrt) {
+    $tensorrtversion = "VALUE_TENSORRT_VERSION"
+    $tensorrtabiversion = "VALUE_TENSORRT_ABI_VERSION"
+    $tensorrtsoversion = "VALUE_TENSORRT_SO_VERSION"
+}
 $cudanvvmbin = "VALUE_NVVM_BIN_PATH"
 $cudanvvmbinx64 = "VALUE_NVVM_BINX64_PATH"
 $cudanvvmlibx64 = "VALUE_NVVM_LIBX64_PATH"
@@ -824,6 +920,44 @@ $env:CUDA_BIN = $cudabin + ";" + $cudabinx64 + ";" + $cudanvvmbin + ";" + $cudan
 $env:BINARY_NVCC = $nvccexe
 $env:CUDA_INCLUDE_DIR = $cudainclude + ";" + $cudanvvminclude + ";" + $cudacsatinclude
 $env:CUDA_LIBRARY_DIR = $cudalib + ";" + $cudalibx64 + ";" + $cudanvvmlibx64 + ";" + $cudacsatlib
+$env:CUDA_VERSION = $cudaversion
+$env:CUDA_MAJOR = ([version]$cudaversion).Major
+$env:CUDA_MINOR = ([version]$cudaversion).Minor
+$env:CUDA_PATCH = ([version]$cudaversion).Patch
+$env:CUDA_ABI_VERSION = $cudaabiversion
+$env:CUDA_SO_VERSION = $cudasoversion
+$env:CUDSS_VERSION = $cudssversion
+$env:CUDSS_MAJOR = ([version]$cudssversion).Major
+$env:CUDSS_MINOR = ([version]$cudssversion).Minor
+$env:CUDSS_PATCH = ([version]$cudssversion).Patch
+$env:CUDSS_ABI_VERSION = $cudssabiversion
+$env:CUDSS_SO_VERSION = $cudsssoversion
+$env:CUTENSOR_VERSION = $cutensorversion
+$env:CUTENSOR_MAJOR = ([version]$cutensorversion).Major
+$env:CUTENSOR_MINOR = ([version]$cutensorversion).Minor
+$env:CUTENSOR_PATCH = ([version]$cutensorversion).Patch
+$env:CUTENSOR_ABI_VERSION = $cutensorabiversion
+$env:CUTENSOR_SO_VERSION = $cutensorsoversion
+$env:CUSPARSE_LT_VERSION = $cusparseltversion
+$env:CUSPARSE_LT_MAJOR = ([version]$cusparseltversion).Major
+$env:CUSPARSE_LT_MINOR = ([version]$cusparseltversion).Minor
+$env:CUSPARSE_LT_PATCH = ([version]$cusparseltversion).Patch
+$env:CUSPARSE_LT_ABI_VERSION = $cusparseltabiversion
+$env:CUSPARSE_LT_SO_VERSION = $cusparseltsoversion
+$env:CUDNN_VERSION = $cudnnversion
+$env:CUDNN_MAJOR = ([version]$cudnnversion).Major
+$env:CUDNN_MINOR = ([version]$cudnnversion).Minor
+$env:CUDNN_PATCH = ([version]$cudnnversion).Patch
+$env:CUDNN_ABI_VERSION = $cudnnabiversion
+$env:CUDNN_SO_VERSION = $cudnnsoversion
+if ($withtensorrt) {
+    $env:TENSORRT_VERSION = $tensorrtversion
+    $env:TENSORRT_MAJOR = ([version]$tensorrtversion).Major
+    $env:TENSORRT_MINOR = ([version]$tensorrtversion).Minor
+    $env:TENSORRT_PATCH = ([version]$tensorrtversion).Patch
+    $env:TENSORRT_ABI_VERSION = $tensorrtabiversion
+    $env:TENSORRT_SO_VERSION = $tensorrtsoversion
+}
 if ($env:CMAKE_PREFIX_PATH -notlike "*$cudacmakepath*") { $env:CMAKE_PREFIX_PATH = $cudacmakepath + ";" + $env:CMAKE_PREFIX_PATH; $env:CMAKE_PREFIX_PATH = ($env:CMAKE_PREFIX_PATH).Replace(";;", ";") }
 "$cudainclude", "$cudanvvminclude", "$cudacsatinclude" | ForEach-Object { if ($env:INCLUDE -notlike "*$_*") { $env:INCLUDE = $_ + ";" + $env:INCLUDE; $env:INCLUDE = ($env:INCLUDE).Replace(";;", ";") } }
 "$cudalib", "$cudalibx64", "$cudanvvmlibx64", "$cudacsatlib" | ForEach-Object { if ($env:LIB -notlike "*$_*") { $env:LIB = $_ + ";" + $env:LIB; $env:LIB = ($env:LIB).Replace(";;", ";") } }
@@ -839,6 +973,24 @@ Write-Host "CUDA_ROOT: $env:CUDA_ROOT" -ForegroundColor Gray
     -replace "VALUE_CMAKE_PATH", $cudaCMakePath `
     -replace "VERSION_VAR_NAME", $versionVarName `
     -replace "VALUE_VERSION", $cudaVersion `
+    -replace "VALUE_ABI_VERSION", $cudabinaryversion `
+    -replace "VALUE_SO_VERSION", $cudabinaryversion `
+    -replace "VALUE_CUDSS_VERSION", $cudssVersion `
+    -replace "VALUE_CUDSS_ABI_VERSION", $cudssbinaryversion `
+    -replace "VALUE_CUDSS_SO_VERSION", $cudssbinaryversion `
+    -replace "VALUE_CUTENSOR_VERSION", $cutensorVersion `
+    -replace "VALUE_CUTENSOR_ABI_VERSION", $cutensorbinaryversion `
+    -replace "VALUE_CUTENSOR_SO_VERSION", $cutensorbinaryversion `
+    -replace "VALUE_CUSPARSELT_VERSION", $cusparseltVersion `
+    -replace "VALUE_CUSPARSELT_ABI_VERSION", $cusparseltbinaryversion `
+    -replace "VALUE_CUSPARSELT_SO_VERSION", $cusparseltbinaryversion `
+    -replace "VALUE_CUDNN_VERSION", $cudnnVersion `
+    -replace "VALUE_CUDNN_ABI_VERSION", $cudnnbinaryversion `
+    -replace "VALUE_CUDNN_SO_VERSION", $cudnnbinaryversion `
+    -replace "VALUE_WITH_TENSORRT", "`$$withTensorRT" `
+    -replace "VALUE_TENSORRT_VERSION", $tensorrtVersion `
+    -replace "VALUE_TENSORRT_ABI_VERSION", $tensorrtbinaryversion `
+    -replace "VALUE_TENSORRT_SO_VERSION", $tensorrtbinaryversion `
     -replace "VALUE_NVVM_BIN_PATH", $cudanvvmBinPath `
     -replace "VALUE_NVVM_BINX64_PATH", $cudanvvmBinx64Path `
     -replace "VALUE_EXE_PATH", $nvccExePath `

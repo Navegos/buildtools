@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/dep-git.ps1
 # created: 2026-03-14
-# lastModified: 2026-04-26
+# lastModified: 2026-05-03
 
 param (
     [Parameter(HelpMessage = "Path for git Installation", Mandatory = $false)]
@@ -44,7 +44,7 @@ if (-not $IsAdmin) {
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
-    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
+    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
     return
 }
 
@@ -132,10 +132,23 @@ function Invoke-GitVersionPurge {
     }
     
     # remove local Env variables for current session
-    Get-ChildItem Env:\GIT_PATH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\GIT_ROOT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\GIT_BIN* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\GIT_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_GIT* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
 
+    foreach ($gitool in $gittools) {
+        $target = Join-Path $GlobalBinDir $gitool
+        if (Test-Path $target) { Remove-Item $target -Force -ErrorAction SilentlyContinue; Write-Host "  [REMOVED] Link: $gitool" -ForegroundColor Gray }
+    }
+    
+    $CurrentPath = $env:PATH
+    $CleanedPathList = $CurrentPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewPath = ($CleanedPathList -join ";").Replace(";;", ";")
+    $NewPath = ($NewPath + ";").Replace(";;", ";")
+    $env:PATH = $NewPath
+    
     Write-Host "--- Git Purge Complete ---" -ForegroundColor Green
 }
 

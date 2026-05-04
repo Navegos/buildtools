@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/dep-cmake.ps1
 # created: 2026-03-01
-# lastModified: 2026-04-26
+# lastModified: 2026-05-03
 
 
 param (
@@ -169,11 +169,24 @@ Write-Host "[REMOVED] ($TargetScope) all '*$cmakeroot*' removed from TOOLS_PATH"
         Remove-Item $InstallPath -Recurse -Force -ErrorAction SilentlyContinue
     }
     
+    foreach ($cmaketool in $cmaketools) {
+        $target = Join-Path $GlobalBinDir $cmaketool
+        if (Test-Path $target) { Remove-Item $target -Force -ErrorAction SilentlyContinue; Write-Host "  [REMOVED] Link: $cmaketool" -ForegroundColor Gray }
+    }
+    
     # remove local Env variables for current session
-    Get-ChildItem Env:\CMAKE_PATH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CMAKE_ROOT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CMAKE_BIN* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CMAKE_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_CMAKE* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
 
+    $CurrentPath = $env:PATH
+    $CleanedPathList = $CurrentPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$fullInstallDir*"
+    }
+    $NewPath = ($CleanedPathList -join ";").Replace(";;", ";")
+    $NewPath = ($NewPath + ";").Replace(";;", ";")
+    $env:PATH = $NewPath
+    
     Write-Host "--- CMake Purge Complete ---" -ForegroundColor Green
 }
 

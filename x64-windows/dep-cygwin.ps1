@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/dep-cygwin.ps1
 # created: 2026-03-07
-# lastModified: 2026-04-26
+# lastModified: 2026-05-04
 
 param (
     [Parameter(HelpMessage = "Path for cygwin storage", Mandatory = $false)]
@@ -22,7 +22,7 @@ $CygwinForceCleanup = $forceCleanup
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
-    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
+    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
     return
 }
 
@@ -141,10 +141,17 @@ Write-Host "[REMOVED] ($TargetScope) all '*$cygwinroot*' removed from TOOLS_PATH
     }
     
     # remove local Env variables for current session
-    Get-ChildItem Env:\CYGWIN_PATH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CYGWIN_ROOT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CYGWIN_BIN* | Remove-Item -ErrorAction SilentlyContinue
-
+    Get-ChildItem Env:\CYGWIN_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    
+    $CurrentPath = $env:PATH
+    $CleanedPathList = $CurrentPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewPath = ($CleanedPathList -join ";").Replace(";;", ";")
+    $NewPath = ($NewPath + ";").Replace(";;", ";")
+    $env:PATH = $NewPath
+    
     Write-Host "--- cygwin Purge Complete ---" -ForegroundColor Green
 }
 
@@ -156,8 +163,9 @@ if ($CygwinForceCleanup) {
 
 # 4. Define Packages (Add or remove as needed for your Clang/ICU/Iconv build)
 $packages = @(
-    "make", "autoconf", "automake", "libtool", "pkg-config", "m4", "patch", "wget",
-    "git", "curl", "gcc-core=16.0.0+20260208-0.1", "gcc-g++=16.0.0+20260208-0.1", "clang=21.1.4-1", "llvm=21.1.4-1", "windres",
+    "make", "strip", "diffutils", "binutils", "autoconf", "automake", "libtool", "pkg-config", "m4", "patch", "wget",
+    "git", "curl", "gcc-g++", "rsync", "unzip", "zip", "7zip", "swig", "cmake", "ninja", "ccache",
+    "gcc-core=16.0.0+20260208-0.1", "gcc-g++=16.0.0+20260208-0.1", "clang=21.1.4-1", "llvm=21.1.4-1", "windres",
     "mingw64-x86_64-gcc-core", "mingw64-x86_64-gcc-g++", "mingw64-x86_64-headers", "mingw64-x86_64-runtime", "mingw64-x86_64-binutils",
     "mingw64-x86_64-clang", "mingw64-x86_64-llvm", "mingw64-x86_64-llvm-static",
     "python39", "python39-clang", "python39-devel", "python39-pip",

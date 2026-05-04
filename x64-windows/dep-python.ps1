@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/dep-python.ps1
 # created: 2026-03-14
-# lastModified: 2026-04-26
+# lastModified: 2026-05-04
 
 param (
     [Parameter(HelpMessage = "Path for python storage", Mandatory = $false)]
@@ -29,7 +29,7 @@ $PythonForceCleanup = $forceCleanup
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
-    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
+    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
     return
 }
 
@@ -200,11 +200,36 @@ Write-Host "[REMOVED] ($TargetScope) all '*$pythonroot*' removed from TOOLS_PATH
     }
     
     # remove local Env variables for current session
-    Get-ChildItem Env:\PYTHON_PATH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\PYTHON_ROOT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\PYTHON_BIN* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\PYTHON_SCRIPTS* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\PYTHON_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_PYTHON* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
 
+    foreach ($pythontool in $pythontools) {
+        $target = Join-Path $GlobalBinDir $pythontool
+        if (Test-Path $target) { Remove-Item $target -Force -ErrorAction SilentlyContinue; Write-Host "  [REMOVED] Link: $pythontool" -ForegroundColor Gray }
+        if ($pythontool -eq "python.exe") {
+            $target3 = Join-Path $GlobalBinDir "python3.exe"
+            if (Test-Path $target3) { Remove-Item $target3 -Force -ErrorAction SilentlyContinue; Write-Host "  [REMOVED] Link: python3.exe" -ForegroundColor Gray }
+        }
+    }
+    
+    $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
+    $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewCMakePrefixPath = ($CleanedCMakePrefixPathList -join ";").Replace(";;", ";")
+    $NewCMakePrefixPath = ($NewCMakePrefixPath + ";").Replace(";;", ";")
+    $env:CMAKE_PREFIX_PATH = $NewCMakePrefixPath
+    
+    $CurrentPath = $env:PATH
+    $CleanedPathList = $CurrentPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewPath = ($CleanedPathList -join ";").Replace(";;", ";")
+    $NewPath = ($NewPath + ";").Replace(";;", ";")
+    $env:PATH = $NewPath
+    
     Write-Host "--- Python Purge Complete ---" -ForegroundColor Green
 }
 
@@ -235,7 +260,7 @@ if ($PythonForceCleanup) {
 }
 
 if (($vLocal -ge $vRemote -and $localVersion -ne "0.0.0") -or ($PythonDontUpdate -and -not $PythonForceCleanup)) {
-    Write-Host "[SKIP] Python $localVersion is already installed and up to date at: $pythonExePath" -ForegroundColor Green
+    Write-Host "[SKIP] Python $localVersion is already installed and up to date at: $pythonInstallDir $pythonExePath" -ForegroundColor Green
     Write-Host "Python Version: $(& $pythonExePath --version | Select-Object -First 1)" -ForegroundColor Gray
 
     # 1. Locate the bin folder and the root folder
@@ -627,6 +652,7 @@ if (Test-Path $pythonExePath) {
     $pythonInstallDir = $pythonInstallDir.TrimEnd('\')
     $pythonScriptsPath = $pythonScriptsPath.TrimEnd('\')
     $pythonExePath = Join-Path $pythonInstallDir "python.exe"
+    $pythonCMakePath = $pythonInstallDir.Replace('\', '/')
 
     # Using a literal here-string with -replace to avoid accidental expansion of $env:PATH during creation
     $EnvContent = @'
@@ -636,6 +662,7 @@ $pythonbin = "VALUE_BIN_PATH"
 $pythonscripts = "VALUE_SCRIPTS_PATH"
 $pythonexe = "VALUE_EXE_PATH"
 $pythonversion = "VALUE_VERSION"
+$pythoncmakepath = "VALUE_CMAKE_PATH"
 $env:PYTHON_PATH = $pythonroot
 $env:PYTHON_ROOT = $pythonroot
 $env:PYTHON_BIN = $pythonbin
@@ -647,16 +674,16 @@ $env:PYTHON_MINOR = ([version]$pythonversion).Minor
 $env:PYTHON_PATCH = ([version]$pythonversion).Patch
 $env:PYTHON_ABI_VERSION = ([version]$pythonversion).ToString(2)
 $env:PYTHON_SO_VERSION = ([version]$pythonversion).ToString(1)
-if ($env:PATH -notlike "*$pythonbin*") { $env:PATH = $pythonbin + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") }
-if ($env:PATH -notlike "*$pythonscripts*") { $env:PATH = $env:PATH + ";" + $pythonscripts; $env:PATH = ($env:PATH).Replace(";;", ";") }
-#"$pythonscripts", "$pythonbin" | ForEach-Object { if ($env:PATH -notlike "*$_*") { $env:PATH = $_ + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") } }
+if ($env:CMAKE_PREFIX_PATH -notlike "*$pythoncmakepath*") { $env:CMAKE_PREFIX_PATH = $pythoncmakepath + ";" + $env:CMAKE_PREFIX_PATH; $env:CMAKE_PREFIX_PATH = ($env:CMAKE_PREFIX_PATH).Replace(";;", ";") }
+"$pythonscripts", "$pythonbin" | ForEach-Object { if ($env:PATH -notlike "*$_*") { $env:PATH = $_ + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") } }
 Write-Host "Python Environment Loaded (Version: $pythonversion) (Bin: $pythonbin)" -ForegroundColor Green
 Write-Host "PYTHON_ROOT: $env:PYTHON_ROOT" -ForegroundColor Gray
 '@  -replace "VALUE_BIN_PATH", $pythonBinPath `
     -replace "VALUE_EXE_PATH", $pythonExePath `
     -replace "VALUE_ROOT_PATH", $pythonInstallDir `
     -replace "VALUE_SCRIPTS_PATH", $pythonScriptsPath `
-    -replace "VALUE_VERSION", $pythonVersion
+    -replace "VALUE_VERSION", $pythonVersion `
+    -replace "VALUE_CMAKE_PATH", $pythonCMakePath
 
     $EnvContent | Out-File -FilePath $pythonEnvScript -Encoding utf8
     Write-Host "Created: $pythonEnvScript" -ForegroundColor Gray

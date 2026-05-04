@@ -1,30 +1,30 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # project: buildtools
-# file: build-libxml2.ps1
-# created: 2026-04-11
-# lastModified: 2026-05-01
+# file: build-openssl.ps1
+# created: 2026-05-02
+# lastModified: 2026-05-02
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
     [string]$workspacePath = $null,
     
-    [Parameter(HelpMessage = "libxml2 git repo url", Mandatory = $false)]
-    [string]$gitUrl = "https://github.com/GNOME/libxml2.git",
+    [Parameter(HelpMessage = "OpenSSL git repo url", Mandatory = $false)]
+    [string]$gitUrl = "https://github.com/openssl/openssl.git",
     
-    [Parameter(HelpMessage = "libxml2 git branch to sync from", Mandatory = $false)]
+    [Parameter(HelpMessage = "OpenSSL git branch to sync from", Mandatory = $false)]
     [string]$gitBranch = "master",
+
+    [Parameter(HelpMessage = "Path for OpenSSL installation", Mandatory = $false)]
+    [string]$opensslInstallDir = $null,
     
-    [Parameter(HelpMessage = "Path for libxml2 library storage", Mandatory = $false)]
-    [string]$libxml2InstallDir = $null,
-    
-    [Parameter(HelpMessage = "Lib name, if it's building with a different name (fixit by changing it's default name beforehand)", Mandatory = $false)]
-    [string]$libxml2LibName = "libxml2",
-    
-    [Parameter(HelpMessage = "Force a full purge of the local libxml2 version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Path for OpenSSL configuration files directory", Mandatory = $false)]
+    [string]$opensslConfigDir = $null,
+
+    [Parameter(HelpMessage = "Force a full purge of the local OpenSSL version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
     
-    [Parameter(HelpMessage = "Add's libxml2 Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
+    [Parameter(HelpMessage = "Add's OpenSSL Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
     [switch]$withMachineEnvironment
 )
 
@@ -48,13 +48,13 @@ if (-not $archFolder) {
 # 2. Platform Detection
 if ($IsWindows) {
     $platform = "windows"
-    if ([string]::IsNullOrWhitespace($libxml2InstallDir)) { $libxml2InstallDir = "$env:LIBRARIES_PATH\libxml2" }
-    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\build-libxml2.ps1"
+    if ([string]::IsNullOrWhitespace($opensslInstallDir)) { $opensslInstallDir = "$env:LIBRARIES_PATH\openssl" }
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\build-openssl.ps1"
 }
 elseif ($IsLinux) {
     $platform = "linux"
-    if ([string]::IsNullOrWhitespace($libxml2InstallDir)) { $libxml2InstallDir = "$env:LIBRARIES_PATH/libxml2" }
-    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)/build-libxml2.ps1"
+    if ([string]::IsNullOrWhitespace($opensslInstallDir)) { $opensslInstallDir = "$env:LIBRARIES_PATH/openssl" }
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)/build-openssl.ps1"
 }
 else {
     Write-Error "Unsupported Operating System."
@@ -64,11 +64,10 @@ else {
 if (Test-Path $targetScript) {
     Write-Host "[OS/ARCH] $platform $currentArch detected. Delegating..." -ForegroundColor Cyan
     
-    # 1. Ensure the default path is captured if not explicitly provided by the user
-    $DirParams = 'workspacePath', 'gitUrl', 'gitBranch', 'libxml2InstallDir', 'libxml2LibName'
+    # Ensure the default path is captured if not explicitly provided by the user
+    $DirParams = 'workspacePath', 'gitUrl', 'gitBranch', 'opensslInstallDir'
     foreach ($ParamName in $DirParams) {
         if (-not $PSBoundParameters.ContainsKey($ParamName)) {
-            # Dynamically get the value of the local variable with the same name
             $PSBoundParameters[$ParamName] = Get-Variable -Name $ParamName -ValueOnly
         }
     }

@@ -3,7 +3,7 @@
 # project: buildtools
 # file: dep-python.ps1
 # created: 2026-03-29
-# lastModified: 2026-04-26
+# lastModified: 2026-05-04
 
 param (
     [Parameter(HelpMessage = "Path for Python storage", Mandatory = $false)]
@@ -51,7 +51,7 @@ else {
 }
 
 if (Test-Path $targetScript) {
-    Write-Host "[OS/ARCH] $platform $currentArch detected. Delegating..." -ForegroundColor Cyan
+    Write-Host "[OS/ARCH] $platform $currentArch detected. Delegating... $pythonInstallDir" -ForegroundColor Cyan
     
     # 1. Ensure the default path is captured if not explicitly provided by the user
     if (-not $PSBoundParameters.ContainsKey('pythonInstallDir')) {

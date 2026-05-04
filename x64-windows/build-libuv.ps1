@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/build-libuv.ps1
 # created: 2026-03-05
-# lastModified: 2026-04-26
+# lastModified: 2026-05-03
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -37,7 +37,7 @@ $libuvWithMachineEnvironment = $withMachineEnvironment
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
-    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
+    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
     return
 }
 
@@ -106,6 +106,8 @@ if ([string]::IsNullOrWhitespace($env:BINARY_CLANG) -or -not (Test-Path $env:BIN
     }
 }
 
+# --- Dependencies: ---
+$RootlibuvWorkspacePath = if ([string]::IsNullOrWhitespace($libuvWorkspacePath)) { Get-Location } else { $libuvWorkspacePath }
 $RootPath = if ([string]::IsNullOrWhitespace($libuvWorkspacePath)) { Get-Location } else { $libuvWorkspacePath }
 
 # --- 6. Path Resolution ---
@@ -206,7 +208,7 @@ Write-Host "[REMOVED] ($TargetScope) all '*$libuvroot*' removed from EXTCOMPLIBS
             Write-Error "Skipped Clean Machine Environment libuv changes."
             Pop-Location; return
         }
-        
+
         # Cleanup
         Remove-Item $libuvCleanMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -231,21 +233,10 @@ Write-Host "[REMOVED] ($TargetScope) all '*$libuvroot*' removed from EXTCOMPLIBS
     }
     
     # remove local Env variables for current session
-    Get-ChildItem Env:\LIBUV_PATH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBUV_ROOT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBUV_BIN* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBUV_INCLUDE_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBUV_LIBRARY_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BINARY_LIB_UV* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\SHARED_LIB_UV* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\STATIC_LIB_UV* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBUV_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBUV_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBUV_MAJOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBUV_MINOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBUV_PATCH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBUV_ABI_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBUV_SO_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LIBUV_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_LIB_UV* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\SHARED_LIB_UV* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\STATIC_LIB_UV* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
     
     $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
     $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 
@@ -295,12 +286,17 @@ if (Test-Path $Source) {
     Write-Host "Syncing libuv ($Branch) at $Source..." -ForegroundColor Cyan
     Set-Location $Source
     git fetch --all
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git fetch failed."; Pop-Location; return }
     git reset --hard "origin/$Branch"
+    git clean -xdf
     git pull --recurse-submodules --force
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git pull failed."; Pop-Location; return }
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
-} else {
+}
+else {
     Write-Host "Cloning libuv ($Branch) into $Source..." -ForegroundColor Cyan
     git clone --recurse-submodules $RepoUrl $Source -b $Branch
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git clone failed."; Pop-Location; return }
     Set-Location $Source
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 }
@@ -356,13 +352,20 @@ $libuvLibDir = Join-Path $libuvInstallDir "lib"
 $libuvBinPath = Join-Path $libuvInstallDir "bin"
 $libuvCMakePath = $libuvInstallDir.Replace('\', '/')
 
-$StaticLib = Join-Path $libuvLibDir ("lib" + "$libuvLibName" + ".lib")
+$StaticLib = Join-Path $libuvLibDir ("lib" + "$libuvLibName" + "_static.lib")
 $SharedLib = Join-Path $libuvLibDir "$libuvLibName.lib"
 $BinaryLib = Join-Path $libuvBinPath "$libuvLibName.dll"
 $versionFile = Join-Path $libuvInstallDir "version.json"
 
-# Fallback check for "z.lib" / "zs.lib" naming convention
-#if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $libuvLibDir "libuvs.lib" }
+$StaticLibPath = Join-Path $libuvLibDir ("lib" + "$libuvLibName" + ".lib")
+if (Test-Path $StaticLibPath) {
+    $NewStaticName = Join-Path $libuvLibDir ("lib" + "$libuvLibName" + "_static.lib")
+    Move-Item -Path $StaticLibPath -Destination $NewStaticName -Force -ErrorAction SilentlyContinue
+    Write-Host "Static library renamed to libuv_static.lib" -ForegroundColor Gray
+}
+
+# Fallback check for "z.lib" / "z_static.lib" naming convention
+#if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $libuvLibDir "libuv_static.lib" }
 #if (-not (Test-Path $SharedLib)) { $SharedLib = Join-Path $libuvLibDir "libuv.lib" }
 #if (-not (Test-Path $BinaryLib)) { $BinaryLib = Join-Path $libuvBinPath "libuv.dll" }
 

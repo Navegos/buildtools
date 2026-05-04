@@ -3,7 +3,7 @@
 # project: buildtools
 # file: dep-cuda.ps1
 # created: 2026-03-23
-# lastModified: 2026-04-26
+# lastModified: 2026-04-28
 
 param (
     [Parameter(HelpMessage = "Base path for cuda storage like path\cuda", Mandatory = $false)]
@@ -27,6 +27,9 @@ param (
     [Parameter(HelpMessage = "Requires member of NVIDIA Developer Program and accept the license terms before download the full link for TensorRT package", Mandatory = $false)]
     [string]$tensorrtLink = $null,
     
+    [Parameter(HelpMessage = "Add TensorRT SDK package to the toolkit installation", Mandatory = $false)]
+    [switch]$withTensorRT,
+
     [Parameter(HelpMessage = "Force a full purge of the local CUDA version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
 

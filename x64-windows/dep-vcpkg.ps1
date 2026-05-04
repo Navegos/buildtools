@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/dep-vcpkg.ps1
 # created: 2026-03-08
-# lastModified: 2026-04-26
+# lastModified: 2026-05-03
 
 param (
     [Parameter(HelpMessage = "Path for vcpkg storage", Mandatory = $false)]
@@ -22,7 +22,7 @@ $vcpkgForceCleanup = $forceCleanup
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
-    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
+    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
     return
 }
 
@@ -168,10 +168,20 @@ Write-Host "[REMOVED] ($TargetScope) all '*$vcpkgroot*' removed from TOOLS_PATH"
     }
     
     # remove local Env variables for current session
-    Get-ChildItem Env:\VCPKG_PATH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\VCPKG_ROOT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\VCPKG_BIN* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\VCPKG_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_VCPKG* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
 
+    if (Test-Path $TargetLink) { Remove-Item $TargetLink -Force -ErrorAction SilentlyContinue; Write-Host "  [REMOVED] Link: vcpkg.exe" -ForegroundColor Gray }
+    
+    $CurrentPath = $env:PATH
+    $CleanedPathList = $CurrentPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewPath = ($CleanedPathList -join ";").Replace(";;", ";")
+    $NewPath = ($NewPath + ";").Replace(";;", ";")
+    $env:PATH = $NewPath
+    
     Write-Host "--- vcpkg Purge Complete ---" -ForegroundColor Green
 }
 

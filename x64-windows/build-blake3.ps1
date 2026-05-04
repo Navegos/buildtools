@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/build-blake3.ps1
 # created: 2026-03-10
-# lastModified: 2026-04-26
+# lastModified: 2026-05-03
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -30,7 +30,7 @@ $blake3WithMachineEnvironment = $withMachineEnvironment
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
-    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
+    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
     return
 }
 
@@ -127,12 +127,16 @@ if (Test-Path $Source) {
     Write-Host "Syncing BLAKE3 ($Branch) at $Source..." -ForegroundColor Cyan
     Set-Location $Source
     git fetch --all
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git fetch failed."; Pop-Location; return }
     git reset --hard "origin/$Branch"
+    git clean -xdf
     git pull --recurse-submodules --force
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git pull failed."; Pop-Location; return }
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 } else {
     Write-Host "Cloning BLAKE3 ($Branch) into $Source..." -ForegroundColor Cyan
     git clone --recurse-submodules $RepoUrl $Source -b $Branch
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git clone failed."; Pop-Location; return }
     Set-Location $Source
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 }
@@ -180,7 +184,7 @@ cmake $CommonCmakeArgs `
     -DCMAKE_CXX_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
     --no-warn-unused-cli
 
-if ($LASTEXITCODE -ne 0) { Write-Error "blake3 CMake Static (blake3s.lib) configuration failed."; Pop-Location; return }
+if ($LASTEXITCODE -ne 0) { Write-Error "blake3 CMake Static (blake3_static.lib) configuration failed."; Pop-Location; return }
 
 Write-Host "Building and Installing static lib to $blake3InstallDir..." -ForegroundColor Green
 cmake --build "$BuildDirStatic" --target install --config Release --parallel
@@ -226,13 +230,13 @@ $blake3LibDir = Join-Path $blake3InstallDir "lib"
 $blake3BinPath = Join-Path $blake3InstallDir "bin"
 $blake3CMakePath = $blake3InstallDir.Replace('\', '/')
 
-$StaticLib = Join-Path $blake3LibDir "blake3static.lib"
+$StaticLib = Join-Path $blake3LibDir "blake3_static.lib"
 $SharedLib = Join-Path $blake3LibDir "blake3.lib"
 $BinaryLib = Join-Path $blake3BinPath "blake3.dll"
 $versionFile = Join-Path $blake3InstallDir "version.json"
 
-# Fallback check for "z.lib" / "zs.lib" naming convention
-if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $blake3LibDir "blake3s.lib" }
+# Fallback check for "z.lib" / "z_static.lib" naming convention
+if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $blake3LibDir "blake3_static.lib" }
 #if (-not (Test-Path $SharedLib)) { $SharedLib = Join-Path $blake3LibDir "blake3.lib" }
 #if (-not (Test-Path $BinaryLib)) { $BinaryLib = Join-Path $blake3BinPath "blake3.dll" }
 

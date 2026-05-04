@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/build-zlib.ps1
 # created: 2026-02-28
-# lastModified: 2026-04-26
+# lastModified: 2026-05-03
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -37,7 +37,7 @@ $zlibWithMachineEnvironment = $withMachineEnvironment
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
-    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
+    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
     return
 }
 
@@ -231,21 +231,10 @@ Write-Host "[REMOVED] ($TargetScope) all '*$zlibroot*' removed from EXTCOMPLIBS_
     }
     
     # remove local Env variables for current session
-    Get-ChildItem Env:\ZLIB_PATH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ZLIB_ROOT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ZLIB_BIN* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ZLIB_INCLUDE_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ZLIB_LIBRARY_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BINARY_LIB_ZLIB* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\SHARED_LIB_ZLIB* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\STATIC_LIB_ZLIB* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ZLIB_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ZLIB_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ZLIB_MAJOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ZLIB_MINOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ZLIB_PATCH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ZLIB_ABI_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ZLIB_SO_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ZLIB_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_LIB_ZLIB* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\SHARED_LIB_ZLIB* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\STATIC_LIB_ZLIB* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
     
     $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
     $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 
@@ -295,12 +284,16 @@ if (Test-Path $Source) {
     Write-Host "Syncing zlib ($Branch) at $Source..." -ForegroundColor Cyan
     Set-Location $Source
     git fetch --all
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git fetch failed."; Pop-Location; return }
     git reset --hard "origin/$Branch"
+    git clean -xdf
     git pull --recurse-submodules --force
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git pull failed."; Pop-Location; return }
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 } else {
     Write-Host "Cloning zlib ($Branch) into $Source..." -ForegroundColor Cyan
     git clone --recurse-submodules $RepoUrl $Source -b $Branch
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git clone failed."; Pop-Location; return }
     Set-Location $Source
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 }
@@ -349,14 +342,19 @@ $zlibLibDir = Join-Path $zlibInstallDir "lib"
 $zlibBinPath = Join-Path $zlibInstallDir "bin"
 $zlibCMakePath = $zlibInstallDir.Replace('\', '/')
 
-$StaticLib = Join-Path $zlibLibDir "zlibstatic.lib"
+$StaticLib = Join-Path $zlibLibDir "zlib_static.lib"
 $SharedLib = Join-Path $zlibLibDir "zlib.lib"
 $BinaryLib = Join-Path $zlibBinPath "zlib.dll"
 $versionFile = Join-Path $zlibInstallDir "version.json"
 
 # Fallback check for "z.lib" / "zs.lib" naming convention
-if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $zlibLibDir ("$zLibName" + "static.lib") }
-if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $zlibLibDir ("$zLibName" + "s.lib") }
+$StaticLibPath = Join-Path $zlibLibDir "zs.lib"
+if (Test-Path $StaticLibPath) {
+    $NewStaticName = Join-Path $zlibLibDir "z_static.lib"
+    Move-Item -Path $StaticLibPath -Destination $NewStaticName -Force -ErrorAction SilentlyContinue
+    Write-Host "Static library renamed to z_static.lib" -ForegroundColor Gray
+}
+if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $zlibLibDir ("$zLibName" + "_static.lib") }
 if (-not (Test-Path $SharedLib)) { $SharedLib = Join-Path $zlibLibDir "$zLibName.lib" }
 if (-not (Test-Path $BinaryLib)) { $BinaryLib = Join-Path $zlibBinPath "$zLibName.dll" }
 

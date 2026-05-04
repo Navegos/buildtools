@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/build-zstd.ps1
 # created: 2026-02-28
-# lastModified: 2026-04-26
+# lastModified: 2026-05-04
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -37,7 +37,7 @@ $zstdWithMachineEnvironment = $withMachineEnvironment
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
-    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
+    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
     return
 }
 
@@ -118,7 +118,7 @@ if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_LZMA) -or -not (Test-Path $env:
         $lzmaBuildScript = Join-Path $PSScriptRoot "build-lzma.ps1"
         if (Test-Path $lzmaBuildScript) {
             $lzmaInstallDir = Join-Path $RootlibzstdInstallDir "lzma"
-            & $lzmaBuildScript -workspacePath $RootzstdWorkspacePath -lzmaInstallDir $lzmaInstallDir
+            . $lzmaBuildScript -workspacePath $RootzstdWorkspacePath -lzmaInstallDir $lzmaInstallDir
         } else {
             Write-Error "CRITICAL: Cannot build lzma. lzma is missing and $lzmaBuildScript was not found."
             return
@@ -134,7 +134,7 @@ if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_LZ4) -or -not (Test-Path $env:S
         $lz4BuildScript = Join-Path $PSScriptRoot "build-lz4.ps1"
         if (Test-Path $lz4BuildScript) {
             $lz4InstallDir = Join-Path $RootlibzstdInstallDir "lz4"
-            & $lz4BuildScript -workspacePath $RootzstdWorkspacePath -lz4InstallDir $lz4InstallDir
+            . $lz4BuildScript -workspacePath $RootzstdWorkspacePath -lz4InstallDir $lz4InstallDir
         } else {
             Write-Error "CRITICAL: Cannot build lz4. lz4 is missing and $lz4BuildScript was not found."
             return
@@ -150,7 +150,7 @@ if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_ZLIB) -or -not (Test-Path $env:
         $zlibBuildScript = Join-Path $PSScriptRoot "build-zlib.ps1"
         if (Test-Path $zlibBuildScript) {
             $zlibInstallDir = Join-Path $RootlibzstdInstallDir "zlib"
-            & $zlibBuildScript -workspacePath $RootzstdWorkspacePath -zlibInstallDir $zlibInstallDir
+            . $zlibBuildScript -workspacePath $RootzstdWorkspacePath -zlibInstallDir $zlibInstallDir
         } else {
             Write-Error "CRITICAL: Cannot build zlib. zlib is missing and $zlibBuildScript was not found."
             return
@@ -285,21 +285,10 @@ Write-Host "[REMOVED] ($TargetScope) all '*$zstdroot*' removed from EXTCOMPLIBS_
     }
     
     # remove local Env variables for current session
-    Get-ChildItem Env:\ZSTD_PATH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ZSTD_ROOT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ZSTD_BIN* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ZSTD_INCLUDE_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ZSTD_LIBRARY_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BINARY_LIB_ZSTD* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\SHARED_LIB_ZSTD* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\STATIC_LIB_ZSTD* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ZSTD_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ZSTD_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ZSTD_MAJOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ZSTD_MINOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ZSTD_PATCH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ZSTD_ABI_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ZSTD_SO_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ZSTD_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_LIB_ZSTD* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\SHARED_LIB_ZSTD* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\STATIC_LIB_ZSTD* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
     
     $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
     $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 
@@ -349,14 +338,48 @@ if (Test-Path $Source) {
     Write-Host "Syncing zstd ($Branch) at $Source..." -ForegroundColor Cyan
     Set-Location $Source
     git fetch --all
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git fetch failed."; Pop-Location; return }
     git reset --hard "origin/$Branch"
+    git clean -xdf
     git pull --recurse-submodules --force
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git pull failed."; Pop-Location; return }
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 } else {
     Write-Host "Cloning zstd ($Branch) into $Source..." -ForegroundColor Cyan
     git clone --recurse-submodules $RepoUrl $Source -b $Branch
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git clone failed."; Pop-Location; return }
     Set-Location $Source
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
+}
+
+# --- Apply Patch some symbols are not exported and build fails linking shared lib ---
+$PatchFile = Join-Path $PSScriptRoot "patch\zstd_cmake.patch"
+if (Test-Path $PatchFile) {
+    Write-Host "[PATCH] Verifying custom CMake modifications..." -ForegroundColor Cyan
+    
+    # 1. Perform a Dry-Run (--check)
+    # --ignore-space-change handles the Windows/Linux line-ending (CRLF/LF) headaches
+    git apply --check --ignore-space-change "$PatchFile"
+    
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "[PATCH] Verification successful. Applying patch..." -ForegroundColor Green
+        
+        # 2. Actually apply the patch
+        git apply --ignore-space-change --verbose "$PatchFile"
+        
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "CRITICAL: Patch verification passed but application failed!"
+            Pop-Location; return
+        }
+    } else {
+        # The check failed, which usually means the repo has changed 
+        # or the patch was already partially applied (unlikely after git reset --hard)
+        Write-Warning "[PATCH] Patch verification failed. The source may have changed upstream."
+        Write-Host "Check the patch file for conflicts or update the patch." -ForegroundColor Yellow
+        
+        # In a strict build-chain, you might want to stop here:
+        Pop-Location; return
+    }
 }
 
 # --- 8. Clean Final Destination ---
@@ -385,6 +408,10 @@ $CommonCmakeArgs = @(
     "-DZSTD_LEGACY_SUPPORT=ON",
     "-DZSTD_MULTITHREAD_SUPPORT=ON",
     "-DZSTD_ENABLE_CXX=ON",
+    "-DZSTD_BUILD_COMPRESSION=ON",
+    "-DZSTD_BUILD_DECOMPRESSION=ON",
+    "-DZSTD_BUILD_DICTBUILDER=ON",
+    "-DZSTD_BUILD_DEPRECATED=ON",
     "-DZSTD_BUILD_PROGRAMS=OFF",
     "-DZSTD_BUILD_TESTS=OFF",
     "-DZSTD_BUILD_TOOLS=OFF",
@@ -394,7 +421,7 @@ $CommonCmakeArgs = @(
 )
 
 # --- 9. STAGE 1: Build Static Libraries ---
-Write-Host "Building Static (zstds.lib)..." -ForegroundColor Cyan
+Write-Host "Building Static (zstd_static.lib)..." -ForegroundColor Cyan
 cmake $CommonCmakeArgs `
     -S "$CMakeSource" `
     -B "$BuildDirStatic" `
@@ -405,19 +432,19 @@ cmake $CommonCmakeArgs `
     -DCMAKE_CXX_FLAGS="-DLZMA_API_STATIC -DLZ4_DLL_IMPORT=0 -DZLIB_STATIC -Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
     --no-warn-unused-cli
 
-if ($LASTEXITCODE -ne 0) { Write-Error "zstd CMake Static (zstds.lib) configuration failed."; Pop-Location; return }
+if ($LASTEXITCODE -ne 0) { Write-Error "zstd CMake Static (zstd_static.lib) configuration failed."; Pop-Location; return }
 
 Write-Host "Building and Installing static lib to $zstdInstallDir..." -ForegroundColor Green
 cmake --build "$BuildDirStatic" --target install --config Release --parallel
 
 if ($LASTEXITCODE -ne 0) { Write-Error "zstd Static Build failed with exit code $LASTEXITCODE"; Pop-Location; return }
 
-# Rename static lib to zstds.lib to avoid collision
+# Rename static lib to zstd_static.lib to avoid collision
 $StaticLibPath = Join-Path $zstdInstallDir "lib/zstd.lib"
-$NewStaticName = Join-Path $zstdInstallDir "lib/zstds.lib"
+$NewStaticName = Join-Path $zstdInstallDir "lib/zstd_static.lib"
 if (Test-Path $StaticLibPath) {
     Move-Item -Path $StaticLibPath -Destination $NewStaticName -Force -ErrorAction SilentlyContinue
-    Write-Host "Static library renamed to zstds.lib" -ForegroundColor Gray
+    Write-Host "Static library renamed to zstd_static.lib" -ForegroundColor Gray
 }
 
 # --- 10. STAGE 2: Build Shared Libraries ---
@@ -426,10 +453,11 @@ cmake $CommonCmakeArgs `
     -S "$CMakeSource" `
     -B "$BuildDirShared" `
     -DCMAKE_INSTALL_PREFIX="$zstdInstallDir" `
+    -DBUILD_SHARED_LIBS=ON `
     -DZSTD_BUILD_SHARED=ON `
     -DZSTD_BUILD_STATIC=OFF `
-    -DCMAKE_C_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
-    -DCMAKE_CXX_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
+    -DCMAKE_C_FLAGS="-DZSTD_DLL_EXPORT=1 -Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
+    -DCMAKE_CXX_FLAGS="-DZSTD_DLL_EXPORT=1 -Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
     --no-warn-unused-cli
     
 if ($LASTEXITCODE -ne 0) { Write-Error "zstd CMake Shared (DLL) configuration failed."; Pop-Location; return }
@@ -452,13 +480,13 @@ $zstdLibDir = Join-Path $zstdInstallDir "lib"
 $zstdBinPath = Join-Path $zstdInstallDir "bin"
 $zstdCMakePath = $zstdInstallDir.Replace('\', '/')
 
-$StaticLib = Join-Path $zstdLibDir ("$zstdLibName" + "static.lib")
+$StaticLib = Join-Path $zstdLibDir ("$zstdLibName" + "_static.lib")
 $SharedLib = Join-Path $zstdLibDir "$zstdLibName.lib"
 $BinaryLib = Join-Path $zstdBinPath "$zstdLibName.dll"
 $versionFile = Join-Path $zstdInstallDir "version.json"
 
-# Fallback check for "z.lib" / "zs.lib" naming convention
-if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $zstdLibDir ("$zstdLibName" + "s.lib") }
+# Fallback check for "z.lib" / "z_static.lib" naming convention
+#if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $zstdLibDir ("$zstdLibName" + "_static.lib") }
 #if (-not (Test-Path $SharedLib)) { $SharedLib = Join-Path $zstdLibDir "zstd.lib" }
 #if (-not (Test-Path $BinaryLib)) { $BinaryLib = Join-Path $zstdBinPath "zstd.dll" }
 

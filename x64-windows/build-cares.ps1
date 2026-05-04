@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/build-cares.ps1
 # created: 2026-03-06
-# lastModified: 2026-04-26
+# lastModified: 2026-05-03
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -37,7 +37,7 @@ $caresWithMachineEnvironment = $withMachineEnvironment
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
-    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
+    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
     return
 }
 
@@ -232,21 +232,10 @@ Write-Host "[REMOVED] ($TargetScope) all '*$caresroot*' removed from EXTCOMPLIBS
     }
     
     # remove local Env variables for current session
-    Get-ChildItem Env:\CARES_PATH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CARES_ROOT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CARES_BIN* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CARES_INCLUDE_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CARES_LIBRARY_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BINARY_LIB_CARES* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\SHARED_LIB_CARES* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\STATIC_LIB_CARES* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CARES_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CARES_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CARES_MAJOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CARES_MINOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CARES_PATCH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CARES_ABI_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CARES_SO_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CARES_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_LIB_CARES* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\SHARED_LIB_CARES* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\STATIC_LIB_CARES* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
     
     $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
     $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 
@@ -296,12 +285,16 @@ if (Test-Path $Source) {
     Write-Host "Syncing cares ($Branch) at $Source..." -ForegroundColor Cyan
     Set-Location $Source
     git fetch --all
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git fetch failed."; Pop-Location; return }
     git reset --hard "origin/$Branch"
+    git clean -xdf
     git pull --recurse-submodules --force
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git pull failed."; Pop-Location; return }
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 } else {
     Write-Host "Cloning cares ($Branch) into $Source..." -ForegroundColor Cyan
     git clone --recurse-submodules $RepoUrl $Source -b $Branch
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git clone failed."; Pop-Location; return }
     Set-Location $Source
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 }
@@ -336,7 +329,7 @@ $CommonCmakeArgs = @(
 )
 
 # --- 9. STAGE 1: Build Static Libraries ---
-Write-Host "Building Static (caress.lib)..." -ForegroundColor Cyan
+Write-Host "Building Static (cares_static.lib)..." -ForegroundColor Cyan
 cmake $CommonCmakeArgs `
     -S "$CMakeSource" `
     -B "$BuildDirStatic" `
@@ -347,19 +340,19 @@ cmake $CommonCmakeArgs `
     -DCMAKE_CXX_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
     --no-warn-unused-cli
     
-if ($LASTEXITCODE -ne 0) { Write-Error "c-ares CMake Static (caress.lib) configuration failed."; Pop-Location; return }
+if ($LASTEXITCODE -ne 0) { Write-Error "c-ares CMake Static (cares_static.lib) configuration failed."; Pop-Location; return }
 
 Write-Host "Building and Installing static lib to $caresInstallDir..." -ForegroundColor Green
 cmake --build "$BuildDirStatic" --target install --config Release --parallel
 
 if ($LASTEXITCODE -ne 0) { Write-Error "c-ares Static Build failed with exit code $LASTEXITCODE"; Pop-Location; return }
 
-# Rename static lib to caress.lib to avoid collision
+# Rename static lib to cares_static.lib to avoid collision
 $StaticLibPath = Join-Path $caresInstallDir "lib/cares.lib"
-$NewStaticName = Join-Path $caresInstallDir "lib/caress.lib"
+$NewStaticName = Join-Path $caresInstallDir "lib/cares_static.lib"
 if (Test-Path $StaticLibPath) {
     Move-Item -Path $StaticLibPath -Destination $NewStaticName -Force -ErrorAction SilentlyContinue
-    Write-Host "Static library renamed to caress.lib" -ForegroundColor Gray
+    Write-Host "Static library renamed to cares_static.lib" -ForegroundColor Gray
 }
 
 # --- 10. STAGE 2: Build Shared Libraries ---
@@ -394,13 +387,13 @@ $caresLibDir = Join-Path $caresInstallDir "lib"
 $caresBinPath = Join-Path $caresInstallDir "bin"
 $caresCMakePath = $caresInstallDir.Replace('\', '/')
 
-$StaticLib = Join-Path $caresLibDir ("$caresLibName" + "static.lib")
+$StaticLib = Join-Path $caresLibDir ("$caresLibName" + "_static.lib")
 $SharedLib = Join-Path $caresLibDir "$caresLibName.lib"
 $BinaryLib = Join-Path $caresBinPath "$caresLibName.dll"
 $versionFile = Join-Path $caresInstallDir "version.json"
 
-# Fallback check for "z.lib" / "zs.lib" naming convention
-if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $caresLibDir ("$caresLibName" + "s.lib") }
+# Fallback check for "z.lib" / "z_static.lib" naming convention
+#if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $caresLibDir ("$caresLibName" + "_static.lib") }
 #if (-not (Test-Path $SharedLib)) { $SharedLib = Join-Path $caresLibDir "z.lib" }
 #if (-not (Test-Path $BinaryLib)) { $BinaryLib = Join-Path $caresBinPath "z.dll" }
 

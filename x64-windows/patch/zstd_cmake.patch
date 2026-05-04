@@ -1,0 +1,12 @@
+diff --git a/build/cmake/lib/CMakeLists.txt b/build/cmake/lib/CMakeLists.txt
+index 82f4f508..8e7f8f89 100644
+--- a/build/cmake/lib/CMakeLists.txt
++++ b/build/cmake/lib/CMakeLists.txt
+@@ -200,6 +200,7 @@ if (ZSTD_BUILD_SHARED)
+     set_target_properties(
+             libzstd_shared
+             PROPERTIES
++            WINDOWS_EXPORT_ALL_SYMBOLS TRUE
+             OUTPUT_NAME zstd
+             VERSION ${ZSTD_FULL_VERSION}
+             SOVERSION ${zstd_VERSION_MAJOR})

@@ -1,0 +1,619 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index c004d4d..78f5c56 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -7,7 +7,7 @@ enable_testing()
+ # where to look first for cmake modules
+ set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules;${CMAKE_MODULE_PATH}")
+ 
+-find_package(Qt5 5.2.0 REQUIRED COMPONENTS Core)
++find_package(Qt6 6.11.0 REQUIRED COMPONENTS Core)
+ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/lib)
+ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/lib)
+ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/bin)
+diff --git a/src/app/main.cpp b/src/app/main.cpp
+index c310836..bfbcce9 100644
+--- a/src/app/main.cpp
++++ b/src/app/main.cpp
+@@ -37,7 +37,9 @@
+ #include <QDir>
+ #include <QProcess>
+ #include <QScopedPointer>
++#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+ #include <QTextCodec>
++#endif
+ 
+ #include <windows.h>
+ #include <Tlhelp32.h>
+@@ -154,7 +156,9 @@ int main(int argc, char* argv[])
+     try {
+         SetConsoleCtrlHandler(&ConsoleCtrlHandlerRoutine, TRUE);
+         Application app(argc, argv);
++#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+         QTextCodec::setCodecForLocale(QTextCodec::codecForName("IBM 850"));
++#endif
+         MakefileFactory mf;
+         Options* options = 0;
+         mf.setEnvironment(QProcess::systemEnvironment());
+diff --git a/src/jomlib/CMakeLists.txt b/src/jomlib/CMakeLists.txt
+index 6ca1fab..3fea29b 100644
+--- a/src/jomlib/CMakeLists.txt
++++ b/src/jomlib/CMakeLists.txt
+@@ -44,12 +44,12 @@ add_library(jomlib STATIC
+   )
+ 
+ target_include_directories(jomlib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+-target_link_libraries(jomlib PUBLIC Qt5::Core)
++target_link_libraries(jomlib PUBLIC Qt6::Core)
+ 
+ # If we're building against a static Qt on Windows,
+ # we must link manually against all private libraries.
+ # This should not be necessary. See QTBUG-38913.
+-get_target_property(qt_core_type Qt5::Core TYPE)
++get_target_property(qt_core_type Qt6::Core TYPE)
+ if(qt_core_type MATCHES STATIC_LIBRARY)
+     target_link_libraries(jomlib PRIVATE mincore userenv winmm ws2_32)
+ 
+@@ -61,7 +61,7 @@ if(qt_core_type MATCHES STATIC_LIBRARY)
+         set(qt_build_config RELEASE)
+     endif()
+ 
+-    get_target_property(qt_core_lib_location Qt5::Core IMPORTED_LOCATION_${qt_build_config})
++    get_target_property(qt_core_lib_location Qt6::Core IMPORTED_LOCATION_${qt_build_config})
+     get_filename_component(qt_core_lib_dir ${qt_core_lib_location} DIRECTORY)
+     target_link_libraries(jomlib PRIVATE "${qt_core_lib_dir}/qtpcre2${debug_suffix}.lib")
+ endif()
+diff --git a/src/jomlib/commandexecutor.cpp b/src/jomlib/commandexecutor.cpp
+index bd10324..9184e35 100644
+--- a/src/jomlib/commandexecutor.cpp
++++ b/src/jomlib/commandexecutor.cpp
+@@ -29,9 +29,14 @@
+ #include "helperfunctions.h"
+ #include "fastfileinfo.h"
+ 
++#include <QtGlobal>
+ #include <QtCore/QDebug>
+ #include <QtCore/QDir>
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++#include <QtCore/QRegularExpression>
++#else
+ #include <QtCore/QRegExp>
++#endif
+ #include <QStringList>
+ #include <windows.h>
+ 
+@@ -144,11 +149,19 @@ inline bool commandLineStartsWithCommand(const QString &str, const QString &sear
+ 
+ static bool startsWithShellBuiltin(const QString &commandLine)
+ {
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++    static QRegularExpression rex(QLatin1String(
++        "^(assoc|break|call|chdir|cd|cls|color|copy|del|dir|echo|endlocal|erase|exit|for|ftype|goto"
++        "|if|md|move|path|pause|popd|prompt|pushd|ren|rename|setlocal|shift|time|title|type|ver|verify|vol)\\s"
++        ), QRegularExpression::CaseInsensitiveOption);
++    return rex.match(commandLine).hasMatch();
++#else
+     static QRegExp rex(QLatin1String(
+         "^(assoc|break|call|chdir|cd|cls|color|copy|del|dir|echo|endlocal|erase|exit|for|ftype|goto"
+         "|if|md|move|path|pause|popd|prompt|pushd|ren|rename|setlocal|shift|time|title|type|ver|verify|vol)\\s"
+         ), Qt::CaseInsensitive, QRegExp::RegExp2);
+     return rex.indexIn(commandLine) >= 0;
++#endif
+ }
+ 
+ void CommandExecutor::executeCurrentCommandLine()
+@@ -168,9 +181,15 @@ void CommandExecutor::executeCurrentCommandLine()
+     // Unescape commandline characters.
+     commandLine.replace(QLatin1String("%%"), QLatin1String("%"));
+ 
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++    static QRegularExpression rexShellComment(QLatin1String("^(:|rem\\s)"),
++                                              QRegularExpression::CaseInsensitiveOption);
++    if (m_pTarget->makefile()->options()->dryRun || rexShellComment.match(commandLine).hasMatch())
++#else
+     static QRegExp rexShellComment(QLatin1String("^(:|rem\\s)"),
+                                    Qt::CaseInsensitive, QRegExp::RegExp2);
+     if (m_pTarget->makefile()->options()->dryRun || (rexShellComment.indexIn(commandLine) >= 0))
++#endif
+     {
+         onProcessFinished(0, Process::NormalExit);
+         return;
+@@ -245,7 +264,7 @@ void CommandExecutor::executeCurrentCommandLine()
+         if (shellCmd.isEmpty())
+             shellCmd = QLatin1String("cmd.exe");
+ 
+-        commandLine = shellCmd + QLatin1Literal(" /C ") + commandLine;
++        commandLine = shellCmd + QLatin1String(" /C ") + commandLine;
+         m_process.start(commandLine);
+         executionSucceeded = m_process.isRunning();
+     }
+@@ -269,7 +288,7 @@ void CommandExecutor::createTempFiles()
+                     fileName = m_tempPath + simplifiedTargetName + QLatin1Char('.')
+                                + QString::number(GetCurrentProcessId()) + QLatin1Char('.')
+                                + QString::number(GetTickCount() - m_startUpTickCount)
+-                               + QLatin1Literal(".jom");
++                               + QLatin1String(".jom");
+                 } while (QFile::exists(fileName));
+             } else
+                 fileName = inlineFile->m_filename;
+@@ -344,8 +363,13 @@ void CommandExecutor::writeToStandardError(const QByteArray& output)
+ 
+ bool CommandExecutor::isSimpleCommandLine(const QString &commandLine)
+ {
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++    static QRegularExpression rex(QLatin1String("\\||>|<|&"));
++    return !rex.match(commandLine).hasMatch();
++#else
+     static QRegExp rex(QLatin1String("\\||>|<|&"));
+     return rex.indexIn(commandLine) == -1;
++#endif
+ }
+ 
+ bool CommandExecutor::exec_cd(const QString &commandLine)
+diff --git a/src/jomlib/commandexecutor.h b/src/jomlib/commandexecutor.h
+index 04b01e1..0d08542 100644
+--- a/src/jomlib/commandexecutor.h
++++ b/src/jomlib/commandexecutor.h
+@@ -30,10 +30,11 @@
+ #include "jomprocess.h"
+ #include <QFile>
+ #include <QString>
++#include <QStringList>
+ 
+-QT_BEGIN_NAMESPACE
++/* QT_BEGIN_NAMESPACE
+ class QStringList;
+-QT_END_NAMESPACE
++QT_END_NAMESPACE */
+ 
+ namespace NMakeFile {
+ 
+diff --git a/src/jomlib/iocompletionport.cpp b/src/jomlib/iocompletionport.cpp
+index 7844c0e..e035e48 100644
+--- a/src/jomlib/iocompletionport.cpp
++++ b/src/jomlib/iocompletionport.cpp
+@@ -97,7 +97,7 @@ void IoCompletionPort::run()
+ 
+         DWORD errorCode = success ? ERROR_SUCCESS : GetLastError();
+         if (!success && !overlapped) {
+-            printf("GetQueuedCompletionStatus failed with error code %d.\n", errorCode);
++            printf("GetQueuedCompletionStatus failed with error code %lu.\n", errorCode);
+             return;
+         }
+ 
+diff --git a/src/jomlib/macrotable.cpp b/src/jomlib/macrotable.cpp
+index ff4d3f6..49eece4 100644
+--- a/src/jomlib/macrotable.cpp
++++ b/src/jomlib/macrotable.cpp
+@@ -26,8 +26,13 @@
+ #include "macrotable.h"
+ #include "exception.h"
+ 
++#include <QtGlobal>
+ #include <QStringList>
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++#include <QRegularExpression>
++#else
+ #include <QRegExp>
++#endif
+ #include <QDebug>
+ 
+ namespace NMakeFile {
+@@ -107,6 +112,11 @@ void MacroTable::defineCommandLineMacroValueImpl(const QString &name, const QStr
+ 
+ bool MacroTable::isMacroNameValid(const QString& name) const
+ {
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++    static QRegularExpression rexMacroIdentifier(QLatin1String("^(?:[A-Z]|_|)(?:\\w|\\.)+$"),
++                                                 QRegularExpression::CaseInsensitiveOption);
++    return rexMacroIdentifier.match(name).hasMatch();
++#else
+     static QRegExp rexMacroIdentifier;
+     if (rexMacroIdentifier.isEmpty()) {
+         rexMacroIdentifier.setPattern(QLatin1String("([A-Z]|_|)(\\w|\\.)+"));
+@@ -114,6 +124,7 @@ bool MacroTable::isMacroNameValid(const QString& name) const
+     }
+ 
+     return rexMacroIdentifier.exactMatch(name);
++#endif
+ }
+ 
+ /**
+@@ -197,7 +208,7 @@ MacroTable::MacroData* MacroTable::internalSetMacroValue(const QString &name, co
+         return 0;
+ 
+     MacroData* result = 0;
+-    const QString instantiatedName = QLatin1Literal("$(") + expandedName + QLatin1Literal(")");
++    const QString instantiatedName = QLatin1String("$(") + expandedName + QLatin1String(")");
+     QString newValue = value;
+     replaceStringWithLazyValue(newValue, instantiatedName, MacroValueOp(this, expandedName));
+ 
+diff --git a/src/jomlib/makefile.cpp b/src/jomlib/makefile.cpp
+index c06cb7c..d6828b8 100644
+--- a/src/jomlib/makefile.cpp
++++ b/src/jomlib/makefile.cpp
+@@ -81,7 +81,7 @@ void Command::evaluateModifiers()
+     for (;;) {
+         if (m_commandLine.isEmpty())
+             break;
+-        const QCharRef firstChar = m_commandLine[0];
++        const QChar firstChar = m_commandLine[0];
+         if (firstChar == QLatin1Char('-')) {
+             // Remove all minus characters. Yes, nmake allows commands like -----7dir
+             int i = 1;
+@@ -225,8 +225,13 @@ void DescriptionBlock::expandFileNameMacros(QString& str, int depIdx, bool depen
+         if (ch == '(') {
+             int substitutionIdx = -1;
+             bool substitutionStateKnown = false;
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++            QStringList macroValues = getFileNameMacroValues(QStringView(str).mid(idx+1), replacementLength,
++                                                             depIdx, dependentsForbidden);
++#else
+             QStringList macroValues = getFileNameMacroValues(str.midRef(idx+1), replacementLength,
+                                                              depIdx, dependentsForbidden);
++#endif
+             if (macroValues.isEmpty()) {
+                 str.remove(idx - 1, replacementLength + 3);
+             } else {
+@@ -294,8 +299,13 @@ void DescriptionBlock::expandFileNameMacros(QString& str, int depIdx, bool depen
+                 str.replace(idx - 1, replacementLength + 4, macroValue);
+             }
+         } else {
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++            QStringList macroValues = getFileNameMacroValues(QStringView(str).mid(idx), replacementLength,
++                                                             depIdx, dependentsForbidden);
++#else
+             QStringList macroValues = getFileNameMacroValues(str.midRef(idx), replacementLength,
+                                                              depIdx, dependentsForbidden);
++#endif
+             if (macroValues.isEmpty()) {
+                 str.remove(idx - 1, replacementLength + 1);
+             } else {
+@@ -306,8 +316,13 @@ void DescriptionBlock::expandFileNameMacros(QString& str, int depIdx, bool depen
+     }
+ }
+ 
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++QStringList DescriptionBlock::getFileNameMacroValues(QStringView str, int& replacementLength,
++                                                     int depIdx, bool dependentsForbidden)
++#else
+ QStringList DescriptionBlock::getFileNameMacroValues(const QStringRef& str, int& replacementLength,
+                                                      int depIdx, bool dependentsForbidden)
++#endif
+ {
+     QStringList results;
+     QStringList dependentCandidates;
+diff --git a/src/jomlib/makefile.h b/src/jomlib/makefile.h
+index 28e0632..0c1a91c 100644
+--- a/src/jomlib/makefile.h
++++ b/src/jomlib/makefile.h
+@@ -31,6 +31,10 @@
+ #include <QStringList>
+ #include <QHash>
+ #include <QVector>
++#include <QtGlobal>
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++#include <QStringView>
++#endif
+ 
+ namespace NMakeFile {
+ 
+@@ -113,8 +117,13 @@ public:
+ private:
+     void expandFileNameMacros(Command& command, int depIdx);
+     void expandFileNameMacros(QString& str, int depIdx, bool dependentsForbidden);
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++    QStringList getFileNameMacroValues(QStringView str, int& replacementLength, int depIdx,
++                                       bool dependentsForbidden);
++#else
+     QStringList getFileNameMacroValues(const QStringRef& str, int& replacementLength, int depIdx,
+                                        bool dependentsForbidden);
++#endif
+ 
+ private:
+     QString m_targetName;
+diff --git a/src/jomlib/makefilelinereader.cpp b/src/jomlib/makefilelinereader.cpp
+index ee20d86..1be8d26 100644
+--- a/src/jomlib/makefilelinereader.cpp
++++ b/src/jomlib/makefilelinereader.cpp
+@@ -25,7 +25,13 @@
+ 
+ #include "makefilelinereader.h"
+ #include "helperfunctions.h"
++
++#include <QtGlobal>
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++#include <QStringConverter>
++#else
+ #include <QTextCodec>
++#endif
+ #include <QDebug>
+ 
+ namespace NMakeFile {
+@@ -62,7 +68,11 @@ bool MakefileLineReader::open()
+         m_readLineImpl = &NMakeFile::MakefileLineReader::readLine_impl_local8bit;
+     } else {
+         m_readLineImpl = &NMakeFile::MakefileLineReader::readLine_impl_unicode;
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++        m_textStream.setEncoding(fileEncoding == FCUTF8 ? QStringConverter::Utf8 : QStringConverter::Utf16);
++#else
+         m_textStream.setCodec(fileEncoding == FCUTF8 ? "UTF-8" : "UTF-16");
++#endif
+         m_textStream.setAutoDetectUnicode(false);
+         m_textStream.setDevice(&m_file);
+     }
+diff --git a/src/jomlib/parser.cpp b/src/jomlib/parser.cpp
+index 8862405..e1751e0 100644
+--- a/src/jomlib/parser.cpp
++++ b/src/jomlib/parser.cpp
+@@ -29,6 +29,7 @@
+ #include "exception.h"
+ #include "helperfunctions.h"
+ 
++#include <QtGlobal>
+ #include <QDebug>
+ #include <QDir>
+ #include <QDirIterator>
+@@ -40,9 +41,15 @@ namespace NMakeFile {
+ Parser::Parser()
+ :   m_preprocessor(0)
+ {
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++    m_rexDotDirective.setPattern(QLatin1String("^\\.(IGNORE|PRECIOUS|SILENT|SUFFIXES)\\s*:(.*)$"));
++    m_rexInferenceRule.setPattern(QLatin1String("^(\\{.*\\})?(\\.\\w+)(\\{.*\\})?(\\.\\w+)(:{1,2})$"));
++    m_rexSingleWhiteSpace.setPattern(QLatin1String("\\s"));
++#else
+     m_rexDotDirective.setPattern(QLatin1String("^\\.(IGNORE|PRECIOUS|SILENT|SUFFIXES)\\s*:(.*)"));
+     m_rexInferenceRule.setPattern(QLatin1String("^(\\{.*\\})?(\\.\\w+)(\\{.*\\})?(\\.\\w+)(:{1,2})"));
+     m_rexSingleWhiteSpace.setPattern(QLatin1String("\\s"));
++#endif
+ }
+ 
+ Parser::~Parser()
+@@ -278,12 +285,20 @@ bool Parser::isDescriptionBlock(int& separatorPos, int& separatorLength, int& co
+ 
+ bool Parser::isInferenceRule(const QString& line)
+ {
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++    return m_rexInferenceRule.match(line).hasMatch();
++#else
+     return m_rexInferenceRule.exactMatch(line);
++#endif
+ }
+ 
+ bool Parser::isDotDirective(const QString& line)
+ {
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++    return m_rexDotDirective.match(line).hasMatch();
++#else
+     return m_rexDotDirective.exactMatch(line);
++#endif
+ }
+ 
+ DescriptionBlock* Parser::createTarget(const QString& targetName)
+@@ -577,11 +592,20 @@ void Parser::parseInlineFiles(Command& cmd, bool inferenceRule)
+ 
+ void Parser::parseInferenceRule()
+ {
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++    QRegularExpressionMatch match = m_rexInferenceRule.match(m_line);
++    QString fromPath = match.captured(1);
++    QString fromExt  = match.captured(2);
++    QString toPath   = match.captured(3);
++    QString toExt    = match.captured(4);
++    bool batchMode   = match.captured(5).length() > 1;
++#else
+     QString fromPath = m_rexInferenceRule.cap(1);
+     QString fromExt  = m_rexInferenceRule.cap(2);
+     QString toPath   = m_rexInferenceRule.cap(3);
+     QString toExt    = m_rexInferenceRule.cap(4);
+     bool batchMode   = m_rexInferenceRule.cap(5).length() > 1;
++#endif
+ 
+     if (fromPath.length() >= 2)
+         fromPath = fromPath.mid(1, fromPath.length() - 2);
+@@ -614,12 +638,23 @@ void Parser::parseInferenceRule()
+ 
+ void Parser::parseDotDirective()
+ {
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++    QRegularExpressionMatch match = m_rexDotDirective.match(m_line);
++    QString directive = match.captured(1);
++    QString value = match.captured(2);
++    //qDebug() << match.captured(1) << match.captured(2);
++#else
+     QString directive = m_rexDotDirective.cap(1);
+     QString value = m_rexDotDirective.cap(2);
+     //qDebug() << m_rexDotDirective.cap(1) << m_rexDotDirective.cap(2);
++#endif
+ 
+     if (directive == QLatin1String("SUFFIXES")) {
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++        QStringList splitvalues = value.simplified().split(m_rexSingleWhiteSpace, Qt::SkipEmptyParts);
++#else
+         QStringList splitvalues = value.simplified().split(m_rexSingleWhiteSpace, QString::SkipEmptyParts);
++#endif
+         //qDebug() << "splitvalues" << splitvalues;
+         if (splitvalues.isEmpty())
+             m_suffixes.clear();
+diff --git a/src/jomlib/parser.h b/src/jomlib/parser.h
+index f746ba1..c131f21 100644
+--- a/src/jomlib/parser.h
++++ b/src/jomlib/parser.h
+@@ -26,7 +26,12 @@
+ #ifndef PARSER_H
+ #define PARSER_H
+ 
++#include <QtGlobal>
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++#include <QRegularExpression>
++#else
+ #include <QRegExp>
++#endif
+ #include <QHash>
+ #include <QVector>
+ #include <QStack>
+@@ -75,9 +80,15 @@ private:
+     bool                        m_silentCommands;
+     bool                        m_ignoreExitCodes;
+ 
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++    QRegularExpression          m_rexDotDirective;
++    QRegularExpression          m_rexInferenceRule;
++    QRegularExpression          m_rexSingleWhiteSpace;
++#else
+     QRegExp                     m_rexDotDirective;
+     QRegExp                     m_rexInferenceRule;
+     QRegExp                     m_rexSingleWhiteSpace;
++#endif
+ 
+     Makefile*                   m_makefile;
+     QStringList                 m_suffixes;
+diff --git a/src/jomlib/preprocessor.cpp b/src/jomlib/preprocessor.cpp
+index b0e001c..031b0d5 100644
+--- a/src/jomlib/preprocessor.cpp
++++ b/src/jomlib/preprocessor.cpp
+@@ -30,6 +30,7 @@
+ #include "helperfunctions.h"
+ #include "fastfileinfo.h"
+ 
++#include <QtGlobal>
+ #include <QDir>
+ #include <QDebug>
+ 
+@@ -40,7 +41,11 @@ Preprocessor::Preprocessor()
+     m_expressionParser(0),
+     m_bInlineFileMode(false)
+ {
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+     m_rexPreprocessingDirective.setPattern(QLatin1String("^!\\s*(\\S+)(.*)"));
++#else
++    m_rexPreprocessingDirective.setPattern(QLatin1String("^!\\s*(\\S+)(.*)"));
++#endif
+ }
+ 
+ Preprocessor::~Preprocessor()
+@@ -83,7 +88,7 @@ bool Preprocessor::internalOpenFile(QString fileName)
+     MakefileLineReader* reader = new MakefileLineReader(fileName);
+     if (!reader->open()) {
+         delete reader;
+-        error(QLatin1Literal("Can't open ") + origFileName);
++        error(QLatin1String("Can't open ") + origFileName);
+     }
+ 
+     m_fileStack.push(TextFile());
+@@ -117,7 +122,7 @@ QString Preprocessor::readLine()
+     }
+ 
+     if (line.content.isNull() && conditionalDepth())
+-        error(QLatin1Literal("Missing !ENDIF directive."));
++        error(QLatin1String("Missing !ENDIF directive."));
+ 
+     return line.content;
+ }
+@@ -209,10 +214,17 @@ bool Preprocessor::parseMacro(const QString& line)
+     if (line.isEmpty())
+         return false;
+ 
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++    static const QRegularExpression rex(QLatin1String("^(?:_|[a-z]|[0-9]|\\$)(?:[a-z]|[0-9]|\\$|=|\\()?"),
++                                        QRegularExpression::CaseInsensitiveOption);
++    if (!rex.match(line).hasMatch())
++        return false;
++#else
+     static const QRegExp rex(QLatin1String("^(?:_|[a-z]|[0-9]|\\$)(?:[a-z]|[0-9]|\\$|=|\\()?"),
+                              Qt::CaseInsensitive, QRegExp::RegExp2);
+     if (rex.indexIn(line) != 0)
+         return false;
++#endif
+ 
+     int equalsSignPos = -1;
+     int parenthesisDepth = 0;
+@@ -254,7 +266,7 @@ bool Preprocessor::parsePreprocessingDirective(const QString& line)
+ 
+     if (directive == QLatin1String("CMDSWITCHES")) {
+     } else if (directive == QLatin1String("ERROR")) {
+-        error(QLatin1Literal("ERROR: ") + value);
++        error(QLatin1String("ERROR: ") + value);
+     } else if (directive == QLatin1String("MESSAGE")) {
+         puts(qPrintable(value));
+     } else if (directive == QLatin1String("INCLUDE")) {
+@@ -349,7 +361,11 @@ QString Preprocessor::findIncludeFile(const QString &filePathToInclude)
+         // Search through all directories in the INCLUDE macro.
+         const QString includeVar = m_macroTable->macroValue(QLatin1String("INCLUDE"))
+                 .replace(QLatin1Char('\t'), QLatin1Char(' '));
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++        const QStringList includeDirs = includeVar.split(QLatin1Char(';'), Qt::SkipEmptyParts);
++#else
+         const QStringList includeDirs = includeVar.split(QLatin1Char(';'), QString::SkipEmptyParts);
++#endif
+         foreach (const QString& includeDir, includeDirs) {
+             fi.setFile(includeDir + QLatin1Char('/') + filePath);
+             if (fi.exists())
+@@ -388,19 +404,37 @@ bool Preprocessor::isPreprocessingDirective(const QString& line, QString& direct
+         directive = QLatin1String("INCLUDE");
+         value = line.mid(8);
+     } else {
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++        QRegularExpressionMatch match = m_rexPreprocessingDirective.match(line);
++        result = match.hasMatch();
++        if (result) {
++            directive = match.captured(1).toUpper();
++            value = match.captured(2).trimmed();
++#else
+         result = m_rexPreprocessingDirective.exactMatch(line);
+         if (result) {
+             directive = m_rexPreprocessingDirective.cap(1).toUpper();
+             value = m_rexPreprocessingDirective.cap(2).trimmed();
++#endif
+ 
+             // Handle "!else if", "!else ifdef", "!else ifndef" as "!ELSEIF" etc.
+             if (directive == QLatin1String("ELSE")) {
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++                static const QRegularExpression rex(QLatin1String("^(ifn?def|if)\\s+(.*)$"),
++                                                    QRegularExpression::CaseInsensitiveOption);
++                QRegularExpressionMatch match2 = rex.match(value);
++                if (match2.hasMatch()) {
++                    directive.append(match2.captured(1).toUpper());
++                    value = match2.captured(2);
++                }
++#else
+                 static const QRegExp rex(QLatin1String("^(ifn?def|if)\\s+(.*)$"),
+                                          Qt::CaseInsensitive);
+                 if (rex.exactMatch(value)) {
+                     directive.append(rex.cap(1).toUpper());
+                     value = rex.cap(2);
+                 }
++#endif
+             }
+         }
+     }
+diff --git a/src/jomlib/preprocessor.h b/src/jomlib/preprocessor.h
+index b268c72..43fd9d7 100644
+--- a/src/jomlib/preprocessor.h
++++ b/src/jomlib/preprocessor.h
+@@ -28,7 +28,12 @@
+ 
+ #include "makefilelinereader.h"
+ 
++#include <QtGlobal>
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++#include <QRegularExpression>
++#else
+ #include <QRegExp>
++#endif
+ #include <QStack>
+ #include <QStringList>
+ 
+@@ -100,7 +105,11 @@ private:
+ 
+     QStack<TextFile>    m_fileStack;
+     MacroTable*         m_macroTable;
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++    QRegularExpression  m_rexPreprocessingDirective;
++#else
+     QRegExp             m_rexPreprocessingDirective;
++#endif
+     QStack<bool>        m_conditionalStack;
+     PPExprParser*       m_expressionParser;
+     QStringList         m_linesPutBack;

@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/build-libxml2.ps1
 # created: 2026-03-10
-# lastModified: 2026-04-26
+# lastModified: 2026-05-03
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -37,7 +37,7 @@ $libxml2WithMachineEnvironment = $withMachineEnvironment
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
-    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
+    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
     return
 }
 
@@ -118,7 +118,7 @@ if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_LZMA) -or -not (Test-Path $env:
         $lzmaBuildScript = Join-Path $PSScriptRoot "build-lzma.ps1"
         if (Test-Path $lzmaBuildScript) {
             $lzmaInstallDir = Join-Path $Rootlibxml2InstallDir "lzma"
-            & $lzmaBuildScript -workspacePath $Rootlibxml2WorkspacePath -lzmaInstallDir $lzmaInstallDir
+            . $lzmaBuildScript -workspacePath $Rootlibxml2WorkspacePath -lzmaInstallDir $lzmaInstallDir
         }
         else {
             Write-Error "CRITICAL: Cannot build lzma. lzma is missing and $lzmaBuildScript was not found."
@@ -135,7 +135,7 @@ if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_ZLIB) -or -not (Test-Path $env:
         $zlibBuildScript = Join-Path $PSScriptRoot "build-zlib.ps1"
         if (Test-Path $zlibBuildScript) {
             $zlibInstallDir = Join-Path $Rootlibxml2InstallDir "zlib"
-            & $zlibBuildScript -workspacePath $Rootlibxml2WorkspacePath -zlibInstallDir $zlibInstallDir
+            . $zlibBuildScript -workspacePath $Rootlibxml2WorkspacePath -zlibInstallDir $zlibInstallDir
         } else {
             Write-Error "CRITICAL: Cannot build zlib. zlib is missing and $zlibBuildScript was not found."
             return
@@ -198,6 +198,9 @@ $Branch         = $libxml2GitBranch
 $CMakeSource    = $Source
 $tag_name       = $Branch
 $url            = $RepoUrl
+
+$GlobalBinDir = "$env:BINARIES_PATH"
+$libxml2tools = @("xmlcatalog.exe", "xmllint.exe")
 
 $libxml2EnvScript = Join-Path $EnvironmentDir "env-libxml2.ps1"
 $libxml2MachineEnvScript = Join-Path $EnvironmentDir "machine-env-libxml2.ps1"
@@ -311,22 +314,16 @@ Write-Host "[REMOVED] ($TargetScope) all '*$libxml2root*' removed from EXTCOMPLI
         Remove-Item $Source -Recurse -Force -ErrorAction SilentlyContinue
     }
     
+    foreach ($libxml2tool in $libxml2tools) {
+        $target = Join-Path $GlobalBinDir $libxml2tool
+        if (Test-Path $target) { Remove-Item $target -Force -ErrorAction SilentlyContinue; Write-Host "  [REMOVED] Link: $libxml2tool" -ForegroundColor Gray }
+    }
+
     # remove local Env variables for current session
-    Get-ChildItem Env:\LIBXML2_PATH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBXML2_ROOT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBXML2_BIN* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBXML2_INCLUDE_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBXML2_LIBRARY_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BINARY_LIB_XML2* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\SHARED_LIB_XML2* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\STATIC_LIB_XML2* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBXML2_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBXML2_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBXML2_MAJOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBXML2_MINOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBXML2_PATCH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBXML2_ABI_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LIBXML2_SO_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LIBXML2_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_LIB_XML2* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\SHARED_LIB_XML2* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\STATIC_LIB_XML2* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
     
     $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
     $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 
@@ -376,12 +373,16 @@ if (Test-Path $Source) {
     Write-Host "Syncing libxml2 ($Branch) at $Source..." -ForegroundColor Cyan
     Set-Location $Source
     git fetch --all
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git fetch failed."; Pop-Location; return }
     git reset --hard "origin/$Branch"
+    git clean -xdf
     git pull --recurse-submodules --force
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git pull failed."; Pop-Location; return }
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 } else {
     Write-Host "Cloning libxml2 ($Branch) into $Source..." -ForegroundColor Cyan
     git clone --recurse-submodules $RepoUrl $Source -b $Branch
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git clone failed."; Pop-Location; return }
     Set-Location $Source
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 }
@@ -441,7 +442,7 @@ $CommonCmakeArgs = @(
 )
 
 # --- 9. STAGE 1: Build Static Libraries ---
-Write-Host "Building Static (libxml2s.lib)..." -ForegroundColor Cyan
+Write-Host "Building Static (libxml2_static.lib)..." -ForegroundColor Cyan
 cmake $CommonCmakeArgs `
     -S "$CMakeSource" `
     -B "$BuildDirStatic" `
@@ -458,7 +459,7 @@ cmake $CommonCmakeArgs `
     -DCMAKE_CXX_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
     --no-warn-unused-cli
 
-if ($LASTEXITCODE -ne 0) { Write-Error "libxml2 CMake Static (libxml2s.lib) configuration failed."; Pop-Location; return }
+if ($LASTEXITCODE -ne 0) { Write-Error "libxml2 CMake Static (libxml2_static.lib) configuration failed."; Pop-Location; return }
 
 Write-Host "Building and Installing static lib to $libxml2InstallDir..." -ForegroundColor Green
 cmake --build "$BuildDirStatic" --target install --config Release --parallel
@@ -466,9 +467,9 @@ cmake --build "$BuildDirStatic" --target install --config Release --parallel
 if ($LASTEXITCODE -ne 0) { Write-Error "libxml2 Static Build failed with exit code $LASTEXITCODE"; Pop-Location; return }
 
 # --- 9.5. Rename Static Libraries (Suffix 's' Only) ---
-Write-Host "Applying 's' suffix to static libs..." -ForegroundColor Gray
+Write-Host "Applying '_static' suffix to static libs..." -ForegroundColor Gray
 Get-ChildItem -Path "$libxml2InstallDir\lib\*.lib" | ForEach-Object {
-    $newName = $_.BaseName + "s" + $_.Extension
+    $newName = $_.BaseName + "_static" + $_.Extension
     Move-Item -Path $_.FullName -Destination (Join-Path $_.DirectoryName $newName) -Force -ErrorAction SilentlyContinue
     Write-Host "  -> $newName" -ForegroundColor DarkGray
 }
@@ -522,7 +523,6 @@ $DependencyBins = @(
 Write-Host "Successfully built and installed libxml2 to $libxml2InstallDir!" -ForegroundColor Green
 
 # Generate Environment Helper with Clean Paths
-$GlobalBinDir = "$env:BINARIES_PATH"
 $libxml2InstallDir = $libxml2InstallDir.TrimEnd('\')
 $libxml2IncludeDir = Join-Path $libxml2InstallDir "include\libxml2"
 $libxml2LibDir = Join-Path $libxml2InstallDir "lib"
@@ -534,8 +534,8 @@ $SharedLib = Join-Path $libxml2LibDir "$libxml2LibName.lib"
 $BinaryLib = Join-Path $libxml2BinPath "$libxml2LibName.dll"
 $versionFile = Join-Path $libxml2InstallDir "version.json"
 
-# Fallback check for "z.lib" / "zs.lib" naming convention
-if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $libxml2LibDir ("$libxml2LibName" + "s.lib") }
+# Fallback check for "z.lib" / "z_static.lib" naming convention
+if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $libxml2LibDir ("$libxml2LibName" + "_static.lib") }
 #if (-not (Test-Path $SharedLib)) { $SharedLib = Join-Path $libxml2LibDir "libxml2.lib" }
 #if (-not (Test-Path $BinaryLib)) { $BinaryLib = Join-Path $libxml2BinPath "libxml2.dll" }
 
@@ -549,7 +549,6 @@ if (-not (Test-Path $libxml2Header)) { Copy-Item -Path "$libxml2buildHeader" -De
 Remove-Item $BuildDirShared -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item $BuildDirStatic -Recurse -Force -ErrorAction SilentlyContinue
 
-$libxml2tools = @("xmlcatalog.exe", "xmllint.exe")
 foreach ($libxml2tool in $libxml2tools) {
     $target = Join-Path $GlobalBinDir $libxml2tool
     if (Test-Path $target) { Remove-Item $target -Force -ErrorAction SilentlyContinue }

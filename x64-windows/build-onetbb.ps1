@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/build-onetbb.ps1
 # created: 2026-03-10
-# lastModified: 2026-04-26
+# lastModified: 2026-05-03
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -34,7 +34,7 @@ $oneTBBWithMachineEnvironment = $withMachineEnvironment
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
-    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
+    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
     return
 }
 
@@ -115,7 +115,7 @@ if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_HWLOC) -or -not (Test-Path $env
         $hwlocBuildScript = Join-Path $PSScriptRoot "build-hwloc.ps1"
         if (Test-Path $hwlocBuildScript) {
             $hwlocInstallDir = Join-Path $RootoneTBBInstallDir "hwloc"
-            & $hwlocBuildScript -workspacePath $RootoneTBBWorkspacePath -hwlocInstallDir $hwlocInstallDir
+            . $hwlocBuildScript -workspacePath $RootoneTBBWorkspacePath -hwlocInstallDir $hwlocInstallDir
         }
         else {
             Write-Error "CRITICAL: Cannot build hwloc. hwloc is missing and $hwlocBuildScript was not found."
@@ -277,31 +277,53 @@ Write-Host "[REMOVED] ($TargetScope) all '*$oneTBBroot*' removed from EXTCOMPLIB
     }
     
     # remove local Env variables for current session
-    Get-ChildItem Env:\TBB_PATH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\TBB_ROOT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\TBB_BIN* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\TBB_INCLUDE_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\TBB_LIBRARY_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BINARY_LIB_TBB* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\SHARED_LIB_TBB* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BINARY_LIB_TBB_MALLOC* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\SHARED_LIB_TBB_MALLOC* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BINARY_LIB_TBB_MALLOC_PROXY* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\SHARED_LIB_TBB_MALLOC_PROXY* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BINARY_LIB_TBB_BIND* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\SHARED_LIB_TBB_BIND* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\TBB_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\TBB_MALLOC_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\TBB_MALLOC_PROXY_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\TBB_BIND_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\TBB_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\TBB_MAJOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\TBB_MINOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\TBB_PATCH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\TBB_ABI_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\TBB_SO_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\TBBROOT* | Remove-Item -ErrorAction SilentlyContinue
-
+    Get-ChildItem Env:\TBB_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_LIB_TBB* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\SHARED_LIB_TBB* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_LIB_TBB_MALLOC* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\SHARED_LIB_TBB_MALLOC* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_LIB_TBB_MALLOC_PROXY* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\SHARED_LIB_TBB_MALLOC_PROXY* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_LIB_TBB_BIND* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\SHARED_LIB_TBB_BIND* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\TBBROOT* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    
+    $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
+    $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewCMakePrefixPath = ($CleanedCMakePrefixPathList -join ";").Replace(";;", ";")
+    $NewCMakePrefixPath = ($NewCMakePrefixPath + ";").Replace(";;", ";")
+    $env:CMAKE_PREFIX_PATH = $NewCMakePrefixPath
+    
+    $CurrentIncludePath = $env:INCLUDE
+    $CleanedIncludePathList = $CurrentIncludePath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewIncludePath = ($CleanedIncludePathList -join ";").Replace(";;", ";")
+    $NewIncludePath = ($NewIncludePath + ";").Replace(";;", ";")
+    $env:INCLUDE = $NewIncludePath
+    
+    $CurrentLibPath = $env:LIB
+    $CleanedLibPathList = $CurrentLibPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewLibPath = ($CleanedLibPathList -join ";").Replace(";;", ";")
+    $NewLibPath = ($NewLibPath + ";").Replace(";;", ";")
+    $env:LIB = $NewLibPath
+    
+    $CurrentPath = $env:PATH
+    $CleanedPathList = $CurrentPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
+    }
+    $NewPath = ($CleanedPathList -join ";").Replace(";;", ";")
+    $NewPath = ($NewPath + ";").Replace(";;", ";")
+    $env:PATH = $NewPath
+    
     Write-Host "--- oneTBB Purge Complete ---" -ForegroundColor Green
 }
 
@@ -314,12 +336,16 @@ if (Test-Path $Source) {
     Write-Host "Syncing oneTBB ($Branch) at $Source..." -ForegroundColor Cyan
     Set-Location $Source
     git fetch --all
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git fetch failed."; Pop-Location; return }
     git reset --hard "origin/$Branch"
+    git clean -xdf
     git pull --recurse-submodules --force
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git pull failed."; Pop-Location; return }
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 } else {
     Write-Host "Cloning oneTBB ($Branch) into $Source..." -ForegroundColor Cyan
     git clone --recurse-submodules $RepoUrl $Source -b $Branch
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git clone failed."; Pop-Location; return }
     Set-Location $Source
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 }

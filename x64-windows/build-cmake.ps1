@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/build-cmake.ps1
 # created: 2026-03-17
-# lastModified: 2026-04-26
+# lastModified: 2026-05-03
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -46,6 +46,9 @@ $EnvironmentDir = "$env:ENVIRONMENT_PATH"
 $cmakeEnvScript = Join-Path $EnvironmentDir "env-cmake.ps1"
 $cmakeMachineEnvScript = Join-Path $EnvironmentDir "machine-env-cmake.ps1"
 $RootzstdWorkspacePath = if ([string]::IsNullOrWhitespace($zstdWorkspacePath)) { Get-Location } else { $zstdWorkspacePath }
+
+$GlobalBinDir = "$env:BINARIES_PATH"
+$cmaketools = @("cmake.exe", "cmake-gui.exe", "cmcldeps.exe", "cpack.exe", "ctest.exe")
 
 # --- 1. Cleanup Mechanism ---
 function Invoke-CMakeVersionPurge {
@@ -157,11 +160,24 @@ Write-Host "[REMOVED] ($TargetScope) all '*$cmakeroot*' removed from TOOLS_PATH"
         Remove-Item $Source -Recurse -Force -ErrorAction SilentlyContinue
     }
     
+    foreach ($cmaketool in $cmaketools) {
+        $target = Join-Path $GlobalBinDir $cmaketool
+        if (Test-Path $target) { Remove-Item $target -Force -ErrorAction SilentlyContinue; Write-Host "  [REMOVED] Link: $cmaketool" -ForegroundColor Gray }
+    }
+    
     # remove local Env variables for current session
-    Get-ChildItem Env:\CMAKE_PATH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CMAKE_ROOT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\CMAKE_BIN* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\CMAKE_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_CMAKE* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
 
+    $CurrentPath = $env:PATH
+    $CleanedPathList = $CurrentPath -split ';' | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$fullInstallDir*"
+    }
+    $NewPath = ($CleanedPathList -join ";").Replace(";;", ";")
+    $NewPath = ($NewPath + ";").Replace(";;", ";")
+    $env:PATH = $NewPath
+    
     Write-Host "--- CMake Purge Complete ---" -ForegroundColor Green
 }
 
@@ -251,20 +267,23 @@ if (Test-Path $Source) {
     Write-Host "Syncing CMake ($Branch) at $Source..." -ForegroundColor Cyan
     Set-Location $Source
     git fetch --all
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git fetch failed."; Pop-Location; return }
     git reset --hard "origin/$Branch"
+    git clean -xdf
     git pull --recurse-submodules --force
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git pull failed."; Pop-Location; return }
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 }
 else {
     Write-Host "Cloning CMake ($Branch) into $Source..." -ForegroundColor Cyan
     git clone --recurse-submodules $RepoUrl $Source -b $Branch
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git clone failed."; Pop-Location; return }
     Set-Location $Source
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 }
 
 # --- 8. Clean & Build (Shadow Swap Logic) ---
 # We use .exe extension so it remains 'executable' and detectable
-$GlobalBinDir = "$env:BINARIES_PATH"
 $cmakeBinPath = Join-Path $cmakeInstallDir "bin"
 
 # 2. Check for existing installation
@@ -273,8 +292,6 @@ $TempCMakeDir = Join-Path $env:TEMP "cmake_old"
 $TempCMakeBinDir = Join-Path $TempCMakeDir "bin"
 $versionFile = Join-Path $cmakeInstallDir "version.json"
 
-# --- 8. Clean & Build (Shadow Swap Logic) ---
-$cmaketools = @("cmake.exe", "cmake-gui.exe", "cmcldeps.exe", "cpack.exe", "ctest.exe")
 
 # Loop through each tool for the Shadow Swap
 foreach ($toolName in $cmaketools) {

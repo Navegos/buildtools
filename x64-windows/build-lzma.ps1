@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/build-lzma.ps1
 # created: 2026-03-04
-# lastModified: 2026-04-26
+# lastModified: 2026-05-03
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -37,7 +37,7 @@ $lzmaWithMachineEnvironment = $withMachineEnvironment
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
-    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
+    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
     return
 }
 
@@ -233,21 +233,10 @@ Write-Host "[REMOVED] ($TargetScope) all '*$lzmaroot*' removed from EXTCOMPLIBS_
     }
     
     # remove local Env variables for current session
-    Get-ChildItem Env:\LZMA_PATH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LZMA_ROOT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LZMA_BIN* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LZMA_INCLUDE_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LZMA_LIBRARY_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BINARY_LIB_LZMA* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\SHARED_LIB_LZMA* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\STATIC_LIB_LZMA* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LZMA_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LZMA_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LZMA_MAJOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LZMA_MINOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LZMA_PATCH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LZMA_ABI_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\LZMA_SO_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\LZMA_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_LIB_LZMA* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\SHARED_LIB_LZMA* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\STATIC_LIB_LZMA* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
     
     $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
     $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 
@@ -297,12 +286,16 @@ if (Test-Path $Source) {
     Write-Host "Syncing LZMA ($Branch) at $Source..." -ForegroundColor Cyan
     Set-Location $Source
     git fetch --all
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git fetch failed."; Pop-Location; return }
     git reset --hard "origin/$Branch"
+    git clean -xdf
     git pull --recurse-submodules --force
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git pull failed."; Pop-Location; return }
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 } else {
     Write-Host "Cloning LZMA ($Branch) into $Source..." -ForegroundColor Cyan
     git clone --recurse-submodules $RepoUrl $Source -b $Branch
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git clone failed."; Pop-Location; return }
     Set-Location $Source
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 }
@@ -367,7 +360,7 @@ $CommonCmakeArgs = @(
 )
 
 # --- 9. STAGE 1: Build Static Libraries ---
-Write-Host "Building LZMA Static (lzmas.lib)..." -ForegroundColor Cyan
+Write-Host "Building LZMA Static (lzma_static.lib)..." -ForegroundColor Cyan
 cmake $CommonCmakeArgs `
     -S "$CMakeSource" `
     -B "$BuildDirStatic" `
@@ -378,19 +371,19 @@ cmake $CommonCmakeArgs `
     -DCMAKE_CXX_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
     --no-warn-unused-cli
 
-if ($LASTEXITCODE -ne 0) { Write-Error "lzma CMake Static (lzmas.lib) configuration failed."; Pop-Location; return }
+if ($LASTEXITCODE -ne 0) { Write-Error "lzma CMake Static (lzma_static.lib) configuration failed."; Pop-Location; return }
 
 Write-Host "Building and Installing static lib to $lzmaInstallDir..." -ForegroundColor Green
 cmake --build "$BuildDirStatic" --target install --config Release --parallel
 
 if ($LASTEXITCODE -ne 0) { Write-Error "lzma Static Build failed with exit code $LASTEXITCODE"; Pop-Location; return }
 
-# Rename static lib to lzmas.lib to avoid collision
+# Rename static lib to lzma_static.lib to avoid collision
 $StaticLibPath = Join-Path $lzmaInstallDir "lib/lzma.lib"
-$NewStaticName = Join-Path $lzmaInstallDir "lib/lzmas.lib"
+$NewStaticName = Join-Path $lzmaInstallDir "lib/lzma_static.lib"
 if (Test-Path $StaticLibPath) {
     Move-Item -Path $StaticLibPath -Destination $NewStaticName -Force -ErrorAction SilentlyContinue
-    Write-Host "Static library renamed to lzmas.lib" -ForegroundColor Gray
+    Write-Host "Static library renamed to lzma_static.lib" -ForegroundColor Gray
 }
 
 # --- 10. STAGE 2: Build Shared Libraries ---
@@ -431,7 +424,7 @@ $BinaryLib = Join-Path $lzmaBinPath "$lzmaLibName.dll"
 $versionFile = Join-Path $lzmaInstallDir "version.json"
 
 # Fallback check for "z.lib" / "zs.lib" naming convention
-if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $lzmaLibDir ("$lzmaLibName" + "s.lib") }
+if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $lzmaLibDir ("$lzmaLibName" + "_static.lib") }
 #if (-not (Test-Path $SharedLib)) { $SharedLib = Join-Path $lzmaLibDir "lzma.lib" }
 #if (-not (Test-Path $BinaryLib)) { $BinaryLib = Join-Path $lzmaBinPath ("lib" + "$lzmaLibName" + ".dll") } # this its wrong but having a diferent binary name from library
 

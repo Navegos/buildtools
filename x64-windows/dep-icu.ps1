@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/dep-icu.ps1
 # created: 2026-03-10
-# lastModified: 2026-04-26
+# lastModified: 2026-05-01
 
 param (
     [Parameter(HelpMessage = "Target vcpkg ICU triplet")]
@@ -22,7 +22,7 @@ $icuForceCleanup = $forceCleanup
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
-    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
+    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
     return
 }
 
@@ -79,10 +79,10 @@ try {
     Write-Host "Fetching latest ICU version from vcpkg master..." -ForegroundColor Gray
     $icuManifest = Invoke-RestMethod -Uri $rawJsonUrl
     $url = $rawJsonUrl
-    $tag_name = $icuManifest.version
+    $tag_name = if ($icuManifest.version) { $icuManifest.version } else { $icuManifest."version-semver" }
     $updated_at = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
-    $remoteVersionString = $icuManifest.version.TrimStart('v')
-    
+    $remoteVersionString = $tag_name.TrimStart('v')
+
     # Clean remote version for comparison (e.g., "1.12.1")
     if ($remoteVersionString -match '^(\d+\.\d+(\.\d+)?)') { $remoteVersion = $Matches[1] }
 
@@ -234,29 +234,17 @@ Write-Host "[REMOVED] ($TargetScope) all '*$icutoolsbinpath*' removed from EXTCO
     Pop-Location
     
     # remove local Env variables for current session
-    Get-ChildItem Env:\ICU_PATH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICU_ROOT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICU_BIN* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICU_TOOLS_BIN* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICU_INCLUDE_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICU_LIBRARY_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BINARY_LIB_ICUUC* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\SHARED_LIB_ICUUC* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BINARY_LIB_ICUTU* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\SHARED_LIB_ICUTU* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BINARY_LIB_ICUIO* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\SHARED_LIB_ICUIO* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BINARY_LIB_ICUIN* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\SHARED_LIB_ICUIN* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BINARY_LIB_ICUDT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\SHARED_LIB_ICUDT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICU_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICU_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICU_MAJOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICU_MINOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICU_PATCH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICU_ABI_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\ICU_SO_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\ICU_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_LIB_ICUUC* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\SHARED_LIB_ICUUC* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_LIB_ICUTU* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\SHARED_LIB_ICUTU* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_LIB_ICUIO* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\SHARED_LIB_ICUIO* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_LIB_ICUIN* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\SHARED_LIB_ICUIN* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_LIB_ICUDT* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\SHARED_LIB_ICUDT* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
     
     $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
     $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 

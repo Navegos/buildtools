@@ -1,0 +1,19 @@
+diff --git a/src/tools/clang-win.jam b/src/tools/clang-win.jam
+index 8f2a18f6f..8ad8d9705 100644
+--- a/src/tools/clang-win.jam
++++ b/src/tools/clang-win.jam
+@@ -143,8 +143,14 @@ rule init ( version ? : command * : options * )
+                 linker = [ regex.replace $(items[1]) "\\\\HostX64\\\\x86\\\\" "\\HostX86\\x86\\" ] ;
+             }
+             if $(linker) {
++            local unquoted-linker = [ MATCH "^\"([^\"]*)\"$" : $(linker) ] ;
++            if $(unquoted-linker) {
++                assembler ?= "\"$(unquoted-linker:B=$(target-assembler))\"" ;
++            }
++            else {
+                 assembler ?= $(linker:B=$(target-assembler)) ;
+             }
++            }
+             assembler ?= $(target-assembler) ;
+ 
+             .notice "$(arch)-$(addr):" "using linker '$(linker)'" ;

@@ -1,39 +1,38 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # project: buildtools
-# file: x64-windows/build-libexpat.ps1
-# created: 2026-04-15
-# lastModified: 2026-05-03
+# file: x64-windows/build-lerc.ps1
+# created: 2026-05-04
+# lastModified: 2026-05-04
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
     [string]$workspacePath = $null,
 
-    [Parameter(HelpMessage = "libexpat (xz) git repo url", Mandatory = $false)]
-    [string]$gitUrl = "https://github.com/libexpat/libexpat.git",
+    [Parameter(HelpMessage = "lerc git repo url", Mandatory = $false)]
+    [string]$gitUrl = "https://github.com/Esri/lerc.git",
     
-    [Parameter(HelpMessage = "libexpat git branch to sync from", Mandatory = $false)]
+    [Parameter(HelpMessage = "lerc git branch to sync from", Mandatory = $false)]
     [string]$gitBranch = "master",
 
-    [Parameter(HelpMessage = "Path for libexpat library storage", Mandatory = $false)]
-    [string]$libexpatInstallDir = "$env:LIBRARIES_PATH\libexpat",
+    [Parameter(HelpMessage = "Path for lerc library storage", Mandatory = $false)]
+    [string]$lercInstallDir = "$env:LIBRARIES_PATH\lerc",
     
-    [Parameter(HelpMessage = "Lib name, if it's building with a different name (fixit by changing it's default name beforehand)", Mandatory = $false)]
-    [string]$libexpatLibName = "libexpat",
+    [Parameter(HelpMessage = "Lib name, if it's building with a different name", Mandatory = $false)]
+    [string]$lercLibName = "Lerc",
     
-    [Parameter(HelpMessage = "Force a full purge of the local libexpat version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Force a full purge of the local lerc version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
     
-    [Parameter(HelpMessage = "Add's libexpat Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
+    [Parameter(HelpMessage = "Add's lerc Machine Environment Variables.", Mandatory = $false)]
     [switch]$withMachineEnvironment
 )
 
-# Capture parameters
-$libexpatWorkspacePath = $workspacePath
-$libexpatGitUrl = $gitUrl
-$libexpatGitBranch = $gitBranch
-$libexpatForceCleanup = $forceCleanup
-$libexpatWithMachineEnvironment = $withMachineEnvironment
+$lercWorkspacePath = $workspacePath
+$lercGitUrl = $gitUrl
+$lercGitBranch = $gitBranch
+$lercForceCleanup = $forceCleanup
+$lercWithMachineEnvironment = $withMachineEnvironment
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
@@ -106,55 +105,43 @@ if ([string]::IsNullOrWhitespace($env:BINARY_CLANG) -or -not (Test-Path $env:BIN
     }
 }
 
-# Load pkgconf requirement
-if ([string]::IsNullOrWhitespace($env:BINARY_PKGCONF) -or -not (Test-Path $env:BINARY_PKGCONF)) {
-    $pkgconfEnvScript = Join-Path $EnvironmentDir "env-pkgconf.ps1"
-    if (Test-Path $pkgconfEnvScript) { . $pkgconfEnvScript }
-    if ([string]::IsNullOrWhitespace($env:BINARY_PKGCONF) -or -not (Test-Path $env:BINARY_PKGCONF)) {
-        $deppkgconfEnvScript = Join-Path $PSScriptRoot "dep-pkgconf.ps1"
-        if (Test-Path $deppkgconfEnvScript) { . $deppkgconfEnvScript }
-        else {
-            Write-Error "CRITICAL: Cannot load pkgconf environment. pkgconf is missing and $pkgconfEnvScript was not found."
-            return
-        }
-    }
-}
-
-$RootPath = if ([string]::IsNullOrWhitespace($libexpatWorkspacePath)) { Get-Location } else { $libexpatWorkspacePath }
+# --- Dependencies: ---
+$RootlercWorkspacePath = if ([string]::IsNullOrWhitespace($lercWorkspacePath)) { Get-Location } else { $lercWorkspacePath }
+$RootPath = if ([string]::IsNullOrWhitespace($RootlercWorkspacePath)) { Get-Location } else { $RootlercWorkspacePath }
 
 # --- 6. Path Resolution ---
 Push-Location $RootPath
 
-$Source         = Join-Path $RootPath "libexpat"
+$Source         = Join-Path $RootPath "lerc"
 $BuildDirShared = Join-Path $Source "build_shared"
 $BuildDirStatic = Join-Path $Source "build_static"
-$RepoUrl        = $libexpatGitUrl
-$Branch         = $libexpatGitBranch
-$CMakeSource    = Join-Path $Source "expat"
+$RepoUrl        = $lercGitUrl
+$Branch         = $lercGitBranch
+$CMakeSource    = $Source
 $tag_name       = $Branch
 $url            = $RepoUrl
 
-$libexpatMachineEnvScript = Join-Path $EnvironmentDir "machine-env-libexpat.ps1"
-$libexpatEnvScript = Join-Path $EnvironmentDir "env-libexpat.ps1"
+$lercEnvScript = Join-Path $EnvironmentDir "env-lerc.ps1"
+$lercMachineEnvScript = Join-Path $EnvironmentDir "machine-env-lerc.ps1"
 
 # --- 1. Cleanup Mechanism ---
-function Invoke-libexpatVersionPurge {
+function Invoke-lercVersionPurge {
     param ([string]$InstallPath)
-    Write-Host "--- Initiating libexpat Purge ---" -ForegroundColor Cyan
+    Write-Host "--- Initiating lerc Purge ---" -ForegroundColor Cyan
 
-    if ($libexpatWithMachineEnvironment) {
-        $libexpatCleanMachineEnvScript = Join-Path $env:TEMP "clean-machine-env-libexpat.ps1"
+    if ($lercWithMachineEnvironment) {
+        $lercCleanMachineEnvScript = Join-Path $env:TEMP "clean-machine-env-lerc.ps1"
 
         # Generating Clean Machine Environment wich removes the persist registry machine Environment
         $CleanMachineEnvContent = @'
-# libexpat Clean Machine Environment Setup
+# lerc Clean Machine Environment Setup
 
 # --- 0. Self-Elevation Logic ---
 $IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 $ScopeColor = "Cyan"
 
 if (-not $IsAdmin) {
-    Write-Host "Elevation required to clean libexpat system variables. Relaunching as Administrator..." -ForegroundColor Yellow
+    Write-Host "Elevation required to clean lerc system variables. Relaunching as Administrator..." -ForegroundColor Yellow
     # Pass the parameters to the elevated process so they aren't lost
     $Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
     foreach ($Parameter in $PSBoundParameters.GetEnumerator()) {
@@ -176,7 +163,7 @@ if (-not $IsAdmin) {
     exit
 }
 
-$libexpatroot = "VALUE_ROOT_PATH"
+$lercroot = "VALUE_ROOT_PATH"
 
 $TargetScope = if ($IsAdmin) { "Machine" } else { "User" }
 $RegPath = if ($IsAdmin) { "System\CurrentControlSet\Control\Session Manager\Environment" } else { "Environment" }
@@ -188,8 +175,8 @@ $RegKey = [Microsoft.Win32.Registry]::$RegRoot.OpenSubKey($RegPath, $true)
 # Open the registry key directly to read the RAW (unexpanded) string
 $RawPath = $RegKey.GetValue("EXTCOMPLIBS_PATH", "", [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
 
-# Cleanup: Remove empty strings, any path containing $libexpatroot,
-$CleanPath = ($RawPath -split ';' | Where-Object { $_ -notlike "*$libexpatroot*" }) -join ";"
+# Cleanup: Remove empty strings, any path containing $lercroot,
+$CleanPath = ($RawPath -split ';' | Where-Object { $_ -notlike "*$lercroot*" }) -join ";"
 
 # Save as ExpandString
 $RegKey.SetValue("EXTCOMPLIBS_PATH", $CleanPath, [Microsoft.Win32.RegistryValueKind]::ExpandString)
@@ -197,20 +184,20 @@ $env:EXTCOMPLIBS_PATH = $CleanPath
 
 $RegKey.Close()
 
-Write-Host "[REMOVED] ($TargetScope) all '*$libexpatroot*' removed from EXTCOMPLIBS_PATH" -ForegroundColor $ScopeColor
+Write-Host "[REMOVED] ($TargetScope) all '*$lercroot*' removed from EXTCOMPLIBS_PATH" -ForegroundColor $ScopeColor
 '@  -replace "VALUE_ROOT_PATH", $InstallPath
 
-        $CleanMachineEnvContent | Out-File -FilePath $libexpatCleanMachineEnvScript -Encoding utf8
-        Write-Host "Created: $libexpatCleanMachineEnvScript" -ForegroundColor Gray
+        $CleanMachineEnvContent | Out-File -FilePath $lercCleanMachineEnvScript -Encoding utf8
+        Write-Host "Created: $lercCleanMachineEnvScript" -ForegroundColor Gray
         
         # --- Interaction: Prompt to remove persistent changes ---
         Write-Host ""
-        $choice = Read-Host "Administrator rights required to Clean Machine Environment libexpat changes? (y/n)"
+        $choice = Read-Host "Administrator rights required to Clean Machine Environment lerc changes? (y/n)"
         if ($choice -eq 'y' -or $choice -eq 'Y') {
-            Write-Host "Executing $libexpatCleanMachineEnvScript..." -ForegroundColor Yellow
+            Write-Host "Executing $lercCleanMachineEnvScript..." -ForegroundColor Yellow
             try {
                 # Start the generated script. It handles its own elevation logic.
-                & $libexpatCleanMachineEnvScript
+                & $lercCleanMachineEnvScript
             }
             catch {
                 Write-Error "Failed to execute the Clean Machine Environment script: $($_.Exception.Message)"
@@ -218,23 +205,23 @@ Write-Host "[REMOVED] ($TargetScope) all '*$libexpatroot*' removed from EXTCOMPL
             }
         }
         else {
-            Write-Error "Skipped Clean Machine Environment libexpat changes."
+            Write-Error "Skipped Clean Machine Environment lerc changes."
             Pop-Location; return
         }
 
         # Cleanup
-        Remove-Item $libexpatCleanMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item $lercCleanMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     # 2. Filesystem Clean (Requires checking for locked files)
     # delete everithing we create don't fail later
-    if (Test-Path $libexpatEnvScript) {
-        Write-Host "  [DELETING] $libexpatEnvScript" -ForegroundColor Yellow
-        Remove-Item $libexpatEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path $lercEnvScript) {
+        Write-Host "  [DELETING] $lercEnvScript" -ForegroundColor Yellow
+        Remove-Item $lercEnvScript -Recurse -Force -ErrorAction SilentlyContinue
     }
-    if (Test-Path $libexpatMachineEnvScript) {
-        Write-Host "  [DELETING] $libexpatMachineEnvScript" -ForegroundColor Yellow
-        Remove-Item $libexpatMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path $lercMachineEnvScript) {
+        Write-Host "  [DELETING] $lercMachineEnvScript" -ForegroundColor Yellow
+        Remove-Item $lercMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
     }
     if (Test-Path $InstallPath) {
         Write-Host "  [DELETING] $InstallPath" -ForegroundColor Yellow
@@ -244,12 +231,12 @@ Write-Host "[REMOVED] ($TargetScope) all '*$libexpatroot*' removed from EXTCOMPL
         Write-Host "  [DELETING] $Source" -ForegroundColor Yellow
         Remove-Item $Source -Recurse -Force -ErrorAction SilentlyContinue
     }
-    
+
     # remove local Env variables for current session
-    Get-ChildItem Env:\LIBEXPAT_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
-    Get-ChildItem Env:\BINARY_LIB_EXPAT* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
-    Get-ChildItem Env:\SHARED_LIB_EXPAT* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
-    Get-ChildItem Env:\STATIC_LIB_EXPAT* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\LERC_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_LIB_LERC* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\SHARED_LIB_LERC* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\STATIC_LIB_LERC* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
     
     $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
     $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 
@@ -287,16 +274,15 @@ Write-Host "[REMOVED] ($TargetScope) all '*$libexpatroot*' removed from EXTCOMPL
     $NewPath = ($NewPath + ";").Replace(";;", ";")
     $env:PATH = $NewPath
     
-    Write-Host "--- LIBEXPAT Purge Complete ---" -ForegroundColor Green
+    Write-Host "--- LERC Purge Complete ---" -ForegroundColor Green
 }
 
-if ($libexpatForceCleanup) {
-    Invoke-libexpatVersionPurge -InstallPath $libexpatInstallDir
+if ($lercForceCleanup) {
+    Invoke-lercVersionPurge -InstallPath $lercInstallDir
 }
 
-# --- 7. Source Management ---
 if (Test-Path $Source) {
-    Write-Host "Syncing LIBEXPAT ($Branch) at $Source..." -ForegroundColor Cyan
+    Write-Host "Syncing lerc ($Branch) at $Source..." -ForegroundColor Cyan
     Set-Location $Source
     git fetch --all
     if ($LASTEXITCODE -ne 0) { Write-Error "Git fetch failed."; Pop-Location; return }
@@ -307,7 +293,7 @@ if (Test-Path $Source) {
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 }
 else {
-    Write-Host "Cloning LIBEXPAT ($Branch) into $Source..." -ForegroundColor Cyan
+    Write-Host "Cloning lerc ($Branch) into $Source..." -ForegroundColor Cyan
     git clone --recurse-submodules $RepoUrl $Source -b $Branch
     if ($LASTEXITCODE -ne 0) { Write-Error "Git clone failed."; Pop-Location; return }
     Set-Location $Source
@@ -315,7 +301,7 @@ else {
 }
 
 # --- Apply Patch some symbols are not exported and build fails linking shared lib ---
-<# $PatchFile = Join-Path $PSScriptRoot "patch\libexpat_cmake.patch"
+$PatchFile = Join-Path $PSScriptRoot "patch\lerc_cmake.patch"
 if (Test-Path $PatchFile) {
     Write-Host "[PATCH] Verifying custom CMake modifications..." -ForegroundColor Cyan
     
@@ -343,14 +329,16 @@ if (Test-Path $PatchFile) {
         # In a strict build-chain, you might want to stop here:
         Pop-Location; return
     }
-} #>
+}
 
 # --- 8. Clean Final Destination ---
-if (Test-Path $libexpatInstallDir) {
+if (Test-Path $lercInstallDir) {
     Write-Host "Wiping existing installation..." -ForegroundColor Yellow
-    Remove-Item $libexpatInstallDir -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item $lercInstallDir -Recurse -Force -ErrorAction SilentlyContinue
 }
-New-Item -Path $libexpatInstallDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
+
+Write-Host "[INSTALL] Creating fresh directory: $lercInstallDir" -ForegroundColor Cyan
+New-Item -Path $lercInstallDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
 
 # Ensure fresh build directory
 if (Test-Path $BuildDirShared) { Remove-Item $BuildDirShared -Recurse -Force -ErrorAction SilentlyContinue }
@@ -358,139 +346,99 @@ if (Test-Path $BuildDirStatic) { Remove-Item $BuildDirStatic -Recurse -Force -Er
 New-Item -Path $BuildDirShared -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
 New-Item -Path $BuildDirStatic -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
 
-# Common CMake Flags 
 $CommonCmakeArgs = @(
     "-G", "Ninja",
     "-DCMAKE_POLICY_DEFAULT_CMP0091=NEW",
     "-DCMAKE_POLICY_DEFAULT_CMP0109=NEW",
     "-DCMAKE_C_COMPILER=clang",
     "-DCMAKE_CXX_COMPILER=clang++",
-    "-DCMAKE_BUILD_TYPE=Release",
-    "-DEXPAT_BUILD_EXAMPLES=OFF",
-    "-DEXPAT_BUILD_TESTS=OFF",
-    "-DEXPAT_BUILD_DOCS=OFF",
-    "-DEXPAT_BUILD_FUZZERS=OFF",
-    "-DEXPAT_BUILD_PKGCONFIG=ON",
-    "-DEXPAT_OSSFUZZ_BUILD=OFF",
-    "-DEXPAT_ENABLE_INSTALL=ON",
-    "-DEXPAT_CONTEXT_BYTES=1024",
-    "-DEXPAT_SYMBOL_VERSIONING=OFF",
-    "-DEXPAT_DTD=ON",
-    "-DEXPAT_GE=ON",
-    "-DEXPAT_NS=ON",
-    "-DEXPAT_WARNINGS_AS_ERRORS=OFF",
-    "-DEXPAT_CHAR_TYPE=char",
-    "-DEXPAT_ATTR_INFO=OFF",
-    "-DEXPAT_LARGE_SIZE=ON",
-    "-DEXPAT_MIN_SIZE=OFF",
-    "-DEXPAT_MSVC_STATIC_CRT=OFF",
-    "-D_EXPAT_M32=OFF"
+    "-DCMAKE_BUILD_TYPE=Release"
 )
 
-# --- 9. STAGE 1: Build Static Libraries ---
-Write-Host "Building LIBEXPAT Static (libexpat_static.lib)..." -ForegroundColor Cyan
+# --- STAGE 1: Build Static Libraries ---
+Write-Host "Building Static..." -ForegroundColor Cyan
 cmake $CommonCmakeArgs `
     -S "$CMakeSource" `
     -B "$BuildDirStatic" `
-    -DCMAKE_INSTALL_PREFIX="$libexpatInstallDir" `
+    -DCMAKE_INSTALL_PREFIX="$lercInstallDir" `
     -DBUILD_SHARED_LIBS=OFF `
-    -DEXPAT_BUILD_TOOLS=OFF `
-    -DCMAKE_CXX_STANDARD=20 `
-    -DCMAKE_C_STANDARD=17 `
     -DCMAKE_C_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
     -DCMAKE_CXX_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
     --no-warn-unused-cli
+    
+if ($LASTEXITCODE -ne 0) { Write-Error "lerc CMake Static configuration failed."; Pop-Location; return }
 
-if ($LASTEXITCODE -ne 0) { Write-Error "libexpat CMake Static (libexpat_static.lib) configuration failed."; Pop-Location; return }
-
-Write-Host "Building and Installing static lib to $libexpatInstallDir..." -ForegroundColor Green
+Write-Host "Building and Installing static lib to $lercInstallDir..." -ForegroundColor Green
 cmake --build "$BuildDirStatic" --target install --config Release --parallel
 
-if ($LASTEXITCODE -ne 0) { Write-Error "libexpat Static Build failed with exit code $LASTEXITCODE"; Pop-Location; return }
+if ($LASTEXITCODE -ne 0) { Write-Error "lerc Static Build failed with exit code $LASTEXITCODE"; Pop-Location; return }
 
-# Rename static lib to libexpat_static.lib to avoid collision
-$StaticLibPath = Join-Path $libexpatInstallDir "lib/libexpat.lib"
-$NewStaticName = Join-Path $libexpatInstallDir "lib/libexpat_static.lib"
-if (Test-Path $StaticLibPath) {
-    Move-Item -Path $StaticLibPath -Destination $NewStaticName -Force -ErrorAction SilentlyContinue
-    Write-Host "Static library renamed to libexpat_static.lib" -ForegroundColor Gray
+# Rename static lib to lerc_static.lib to avoid collision
+Write-Host "Applying '_static' suffix to static libs..." -ForegroundColor Gray
+Get-ChildItem -Path "$lercInstallDir\lib\*.lib" | ForEach-Object {
+    if ($_.BaseName -notmatch "_static") {
+        $newName = ($_.BaseName -replace '(?i)-?static$', '') + "_static" + $_.Extension
+        Move-Item -Path $_.FullName -Destination (Join-Path $_.DirectoryName $newName) -Force -ErrorAction SilentlyContinue
+        Write-Host "  -> $newName" -ForegroundColor DarkGray
+    }
 }
 
-# --- 10. STAGE 2: Build Shared Libraries ---
-Write-Host "Building LIBEXPAT Shared (DLL)..." -ForegroundColor Cyan
+# --- STAGE 2: Build Shared Libraries ---
+Write-Host "Building Shared (DLL)..." -ForegroundColor Cyan
 cmake $CommonCmakeArgs `
     -S "$CMakeSource" `
     -B "$BuildDirShared" `
-    -DCMAKE_INSTALL_PREFIX="$libexpatInstallDir" `
+    -DCMAKE_INSTALL_PREFIX="$lercInstallDir" `
     -DBUILD_SHARED_LIBS=ON `
-    -DEXPAT_SHARED_LIBS=ON `
-    -DEXPAT_BUILD_TOOLS=ON `
-    -DCMAKE_CXX_STANDARD=20 `
-    -DCMAKE_C_STANDARD=17 `
     -DCMAKE_C_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
     -DCMAKE_CXX_FLAGS="-Wno-deprecated-declarations -D_CRT_SECURE_NO_WARNINGS=1" `
     --no-warn-unused-cli
+    
+if ($LASTEXITCODE -ne 0) { Write-Error "lerc CMake Shared (DLL) configuration failed."; Pop-Location; return }
 
-if ($LASTEXITCODE -ne 0) { Write-Error "libexpat CMake Shared (DLL) configuration failed."; Pop-Location; return }
-
-Write-Host "Building and Installing dynamic lib to $libexpatInstallDir..." -ForegroundColor Green
+Write-Host "Building and Installing dynamic lib to $lercInstallDir..." -ForegroundColor Green
 cmake --build "$BuildDirShared" --target install --config Release --parallel
 
-if ($LASTEXITCODE -ne 0) { Write-Error "libexpat Shared Build failed with exit code $LASTEXITCODE"; Pop-Location; return }
+if ($LASTEXITCODE -ne 0) { Write-Error "lerc Shared Build failed with exit code $LASTEXITCODE"; Pop-Location; return }
 
-Write-Host "Successfully built and installed libexpat to $libexpatInstallDir!" -ForegroundColor Green
+Write-Host "Successfully built and installed lerc to $lercInstallDir!" -ForegroundColor Green
 
 # Cleanup temporary build debris
 Remove-Item $BuildDirShared -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item $BuildDirStatic -Recurse -Force -ErrorAction SilentlyContinue
 
 # Generate Environment Helper with Clean Paths
-$libexpatInstallDir = $libexpatInstallDir.TrimEnd('\')
-$libexpatIncludeDir = Join-Path $libexpatInstallDir "include"
-$libexpatLibDir = Join-Path $libexpatInstallDir "lib"
-$libexpatBinPath = Join-Path $libexpatInstallDir "bin"
-$libexpatCMakePath = $libexpatInstallDir.Replace('\', '/')
+$lercInstallDir = $lercInstallDir.TrimEnd('\')
+$lercIncludeDir = Join-Path $lercInstallDir "include"
+$lercLibDir = Join-Path $lercInstallDir "lib"
+$lercBinPath = Join-Path $lercInstallDir "bin"
+$lercCMakePath = $lercInstallDir.Replace('\', '/')
 
-$StaticLib = Join-Path $libexpatLibDir ("$libexpatLibName" + "_static.lib")
-$SharedLib = Join-Path $libexpatLibDir "$libexpatLibName.lib"
-$BinaryLib = Join-Path $libexpatBinPath "$libexpatLibName.dll"
-$versionFile = Join-Path $libexpatInstallDir "version.json"
-
-# Fallback check for "z.lib" / "z_static.lib" naming convention
-#if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $libexpatLibDir ("$libexpatLibName" + "_static.lib") }
-#if (-not (Test-Path $SharedLib)) { $SharedLib = Join-Path $libexpatLibDir "libexpat.lib" }
-#if (-not (Test-Path $BinaryLib)) { $BinaryLib = Join-Path $libexpatBinPath "libexpat.dll" }
+$StaticLib = Join-Path $lercLibDir ("$lercLibName" + "_static.lib")
+$SharedLib = Join-Path $lercLibDir "$lercLibName.lib"
+$BinaryLib = Join-Path $lercBinPath "$lercLibName.dll"
+$versionFile = Join-Path $lercInstallDir "version.json"
 
 if ((Test-Path $StaticLib) -or (Test-Path $SharedLib) -or (Test-Path $BinaryLib)) {
-    $libexpatHeader = Join-Path $libexpatIncludeDir "expat.h"
-    if (-not (Test-Path $libexpatHeader)) { $libexpatHeader = Join-Path $Source "expat\lib\expat.h" }
     $localVersion = "0.0.0"
     $rawVersion = $Branch
     $binaryversion = "0"
-    
-    if (Test-Path $libexpatHeader) {
-        # Extract version from #define #define XML_MAJOR_VERSION  #define XML_MINOR_VERSION #define XML_MICRO_VERSION
-        $headerContent = Get-Content $libexpatHeader
-        
-        # Extract Major, Minor, and Micro versions safely
-        $majorMatch = $headerContent | Select-String '#\s*define\s+XML_MAJOR_VERSION\s+(\d+)' | Select-Object -First 1
-        $minorMatch = $headerContent | Select-String '#\s*define\s+XML_MINOR_VERSION\s+(\d+)' | Select-Object -First 1
-        $microMatch = $headerContent | Select-String '#\s*define\s+XML_MICRO_VERSION\s+(\d+)' | Select-Object -First 1
 
-        $major = if ($majorMatch) { $majorMatch.Matches.Groups[1].Value } else { "0" }
-        $minor = if ($minorMatch) { $minorMatch.Matches.Groups[1].Value } else { "0" }
-        $rel   = if ($microMatch) { $microMatch.Matches.Groups[1].Value } else { "0" }
+    $cmakeFile = Join-Path $Source "CMakeLists.txt"
+    if (Test-Path $cmakeFile) {
+        $cmakeContent = Get-Content $cmakeFile -Raw
+        $versionMatch = [regex]::Match($cmakeContent, '(?si)project\s*\(\s*Lerc.*?VERSION\s+([\d\.]+)')
 
-        if ($major -and $minor -and $rel) {
-            $localVersion = "$major.$minor.$rel"
+        if ($versionMatch.Success) {
+            $localVersion = $versionMatch.Groups[1].Value
             $rawVersion = $localVersion
             $binaryversion = ([version]$localVersion).Major
-            Write-Host "[VERSION] Detected libexpat: $localVersion" -ForegroundColor Cyan
+            Write-Host "[VERSION] Detected lerc: $localVersion" -ForegroundColor Cyan
         }
     }
-    
+
     # Save new version state
-    $libexpatVersion = $localVersion
+    $lercVersion = $localVersion
     $versionInfo = @{
         url        = $url;
         tag_name   = $tag_name;
@@ -505,76 +453,74 @@ if ((Test-Path $StaticLib) -or (Test-Path $SharedLib) -or (Test-Path $BinaryLib)
     }
     $versionInfo | ConvertTo-Json | Out-File -FilePath $versionFile -Encoding utf8 -Force
     
-    # --- 11. Create Environment Helper ---
+    # --- 10. Create Environment Helper ---
     Write-Host "Generating environment helper script..." -ForegroundColor Cyan
     $EnvContent = @'
-# LIBEXPAT Environment Setup
-$libexpatroot = "VALUE_ROOT_PATH"
-$libexpatinclude = "VALUE_INCLUDE_PATH"
-$libexpatlibrary = "VALUE_LIB_PATH"
-$libexpatbin = "VALUE_BIN_PATH"
-$libexpatversion = "VALUE_VERSION"
-$libexpatabiversion = "VALUE_ABI_VERSION"
-$libexpatsoversion = "VALUE_SO_VERSION"
-$libexpatbinary = "VALUE_BINARY"
-$libexpatshared = "VALUE_SHARED"
-$libexpatstatic = "VALUE_STATIC"
-$libexpatlibname = "VALUE_LIB_NAME"
-$libexpatcmakepath = "VALUE_CMAKE_PATH"
-$env:LIBEXPAT_PATH = $libexpatroot
-$env:LIBEXPAT_ROOT = $libexpatroot
-$env:LIBEXPAT_BIN = $libexpatbin
-$env:LIBEXPAT_INCLUDE_DIR = $libexpatinclude
-$env:LIBEXPAT_LIBRARY_DIR = $libexpatlibrary
-$env:BINARY_LIB_EXPAT = $libexpatbinary
-$env:SHARED_LIB_EXPAT = $libexpatshared
-$env:STATIC_LIB_EXPAT = $libexpatstatic
-$env:LIBEXPAT_LIB_NAME = $libexpatlibname
-$env:LIBEXPAT_VERSION = $libexpatversion
-$env:LIBEXPAT_MAJOR = ([version]$libexpatversion).Major
-$env:LIBEXPAT_MINOR = ([version]$libexpatversion).Minor
-$env:LIBEXPAT_PATCH = ([version]$libexpatversion).Patch
-$env:LIBEXPAT_ABI_VERSION = $libexpatabiversion
-$env:LIBEXPAT_SO_VERSION = $libexpatsoversion
-if ($env:CMAKE_PREFIX_PATH -notlike "*$libexpatcmakepath*") { $env:CMAKE_PREFIX_PATH = $libexpatcmakepath + ";" + $env:CMAKE_PREFIX_PATH; $env:CMAKE_PREFIX_PATH = ($env:CMAKE_PREFIX_PATH).Replace(";;", ";") }
-if ($env:INCLUDE -notlike "*$libexpatinclude*") { $env:INCLUDE = $libexpatinclude + ";" + $env:INCLUDE; $env:INCLUDE = ($env:INCLUDE).Replace(";;", ";") }
-if ($env:LIB -notlike "*$libexpatlibrary*") { $env:LIB = $libexpatlibrary + ";" + $env:LIB; $env:LIB = ($env:LIB).Replace(";;", ";") }
-if ($env:PATH -notlike "*$libexpatbin*") { $env:PATH = $libexpatbin + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") }
-Write-Host "libexpat Environment Loaded (Version: $libexpatversion) (Bin: $libexpatbin)" -ForegroundColor Green
-Write-Host "LIBEXPAT_ROOT: $env:LIBEXPAT_ROOT" -ForegroundColor Gray
-'@  -replace "VALUE_ROOT_PATH", $libexpatInstallDir `
-    -replace "VALUE_INCLUDE_PATH", $libexpatIncludeDir `
-    -replace "VALUE_LIB_PATH", $libexpatLibDir `
-    -replace "VALUE_BIN_PATH", $libexpatBinPath `
-    -replace "VALUE_VERSION", $libexpatVersion `
+# LERC Environment Setup
+$lercroot = "VALUE_ROOT_PATH"
+$lercinclude = "VALUE_INCLUDE_PATH"
+$lerclibrary = "VALUE_LIB_PATH"
+$lercbin = "VALUE_BIN_PATH"
+$lercversion = "VALUE_VERSION"
+$lercabiversion = "VALUE_ABI_VERSION"
+$lercsoversion = "VALUE_SO_VERSION"
+$lercbinary = "VALUE_BINARY"
+$lercshared = "VALUE_SHARED"
+$lercstatic = "VALUE_STATIC"
+$lerclibname = "VALUE_LIB_NAME"
+$lerccmakepath = "VALUE_CMAKE_PATH"
+$env:LERC_PATH = $lercroot
+$env:LERC_ROOT = $lercroot
+$env:LERC_BIN = $lercbin
+$env:LERC_INCLUDE_DIR = $lercinclude
+$env:LERC_LIBRARY_DIR = $lerclibrary
+$env:BINARY_LIB_LERC = $lercbinary
+$env:SHARED_LIB_LERC = $lercshared
+$env:STATIC_LIB_LERC = $lercstatic
+$env:LERC_LIB_NAME = $lerclibname
+$env:LERC_VERSION = $lercversion
+$env:LERC_MAJOR = ([version]$lercversion).Major
+$env:LERC_MINOR = ([version]$lercversion).Minor
+$env:LERC_PATCH = ([version]$lercversion).Build
+$env:LERC_ABI_VERSION = $lercabiversion
+$env:LERC_SO_VERSION = $lercsoversion
+if ($env:CMAKE_PREFIX_PATH -notlike "*$lerccmakepath*") { $env:CMAKE_PREFIX_PATH = $lerccmakepath + ";" + $env:CMAKE_PREFIX_PATH; $env:CMAKE_PREFIX_PATH = ($env:CMAKE_PREFIX_PATH).Replace(";;", ";") }
+if ($env:INCLUDE -notlike "*$lercinclude*") { $env:INCLUDE = $lercinclude + ";" + $env:INCLUDE; $env:INCLUDE = ($env:INCLUDE).Replace(";;", ";") }
+if ($env:LIB -notlike "*$lerclibrary*") { $env:LIB = $lerclibrary + ";" + $env:LIB; $env:LIB = ($env:LIB).Replace(";;", ";") }
+if ($env:PATH -notlike "*$lercbin*") { $env:PATH = $lercbin + ";" + $env:PATH; $env:PATH = ($env:PATH).Replace(";;", ";") }
+Write-Host "lerc Environment Loaded (Version: $lercversion) (Bin: $lercbin)" -ForegroundColor Green
+Write-Host "LERC_ROOT: $env:LERC_ROOT" -ForegroundColor Gray
+'@  -replace "VALUE_ROOT_PATH", $lercInstallDir `
+    -replace "VALUE_INCLUDE_PATH", $lercIncludeDir `
+    -replace "VALUE_LIB_PATH", $lercLibDir `
+    -replace "VALUE_BIN_PATH", $lercBinPath `
+    -replace "VALUE_VERSION", $lercVersion `
     -replace "VALUE_ABI_VERSION", $binaryversion `
     -replace "VALUE_SO_VERSION", $binaryversion `
     -replace "VALUE_SHARED", $SharedLib `
     -replace "VALUE_BINARY", $BinaryLib `
     -replace "VALUE_STATIC", $StaticLib `
-    -replace "VALUE_LIB_NAME", $libexpatLibName `
-    -replace "VALUE_CMAKE_PATH", $libexpatCMakePath
+    -replace "VALUE_LIB_NAME", $lercLibName `
+    -replace "VALUE_CMAKE_PATH", $lercCMakePath
 
-    $EnvContent | Out-File -FilePath $libexpatEnvScript -Encoding utf8
-    Write-Host "Created: $libexpatEnvScript" -ForegroundColor Gray
-    
+    $EnvContent | Out-File -FilePath $lercEnvScript -Encoding utf8
+    Write-Host "Created: $lercEnvScript" -ForegroundColor Gray
+
     # Update Current Session
-    if (Test-Path $libexpatEnvScript) { . $libexpatEnvScript } else {
-        Write-Error "libexpat build install finished but $libexpatEnvScript was not created."
+    if (Test-Path $lercEnvScript) { . $lercEnvScript } else {
+        Write-Error "lerc build install finished but $lercEnvScript was not created."
         Pop-Location; return
     }
     
-    if ($libexpatWithMachineEnvironment) {
-        # Generating Machine Environment wich add to the persist registry machine Environment
+    if ($lercWithMachineEnvironment)
+    {
         $MachineEnvContent = @'
-# libexpat Machine Environment Setup
-
-# --- 0. Self-Elevation Logic ---
+# lerc Machine Environment Setup
 $IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 $ScopeColor = "Cyan"
 
 if (-not $IsAdmin) {
-    Write-Host "Elevation required to set libexpat system variables. Relaunching as Administrator..." -ForegroundColor Yellow
+    Write-Host "Elevation required to set lerc system variables. Relaunching as Administrator..." -ForegroundColor Yellow
     # Pass the parameters to the elevated process so they aren't lost
     $Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
     foreach ($Parameter in $PSBoundParameters.GetEnumerator()) {
@@ -596,9 +542,9 @@ if (-not $IsAdmin) {
     exit
 }
 
-$libexpatroot = "VALUE_ROOT_PATH"
-$libexpatbin = "VALUE_BIN_PATH"
-$libexpatversion = "VALUE_VERSION"
+$lercroot = "VALUE_ROOT_PATH"
+$lercbin = "VALUE_BIN_PATH"
+$lercversion = "VALUE_VERSION"
 
 $TargetScope = if ($IsAdmin) { "Machine" } else { "User" }
 $RegPath = if ($IsAdmin) { "System\CurrentControlSet\Control\Session Manager\Environment" } else { "Environment" }
@@ -610,19 +556,18 @@ $RegKey = [Microsoft.Win32.Registry]::$RegRoot.OpenSubKey($RegPath, $true)
 # Open the registry key directly to read the RAW (unexpanded) string
 $CurrentRawPath = $RegKey.GetValue("EXTCOMPLIBS_PATH", "", [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
 
-# Cleanup: Remove empty strings, any path containing $libexpatroot, and the current target (to avoid dups)
 $CleanedPathList = $CurrentRawPath -split ';' | Where-Object { 
     -not [string]::IsNullOrWhitespace($_) -and 
-    $_ -notlike "*$libexpatroot*"
+    $_ -notlike "*$lercroot*"
 }
 
 $NewRawPath = ($CleanedPathList -join ";").Replace(";;", ";")
 
-$TargetPath = $libexpatbin
+$TargetPath = $lercbin
 
 # Rebuild
 $NewRawPath = ($NewRawPath + ";" + $TargetPath + ";").Replace(";;", ";")
-Write-Host "[UPDATED] ($TargetScope) '$libexpatbin' synced in EXTCOMPLIBS_PATH" -ForegroundColor $ScopeColor
+Write-Host "[UPDATED] ($TargetScope) '$lercbin' synced in EXTCOMPLIBS_PATH" -ForegroundColor $ScopeColor
 
 # Save as ExpandString
 $RegKey.SetValue("EXTCOMPLIBS_PATH", $NewRawPath, [Microsoft.Win32.RegistryValueKind]::ExpandString)
@@ -630,39 +575,38 @@ $env:EXTCOMPLIBS_PATH = $NewRawPath
 
 $RegKey.Close()
 
-$env:LIBEXPAT_ROOT = $libexpatroot
-Write-Host "libexpat Environment Loaded (Version: $libexpatversion) (Bin: $libexpatbin)" -ForegroundColor Green
-Write-Host "LIBEXPAT_ROOT: $env:LIBEXPAT_ROOT" -ForegroundColor Gray
-'@  -replace "VALUE_ROOT_PATH", $libexpatInstallDir `
-    -replace "VALUE_BIN_PATH", $libexpatBinPath `
-    -replace "VALUE_VERSION", $libexpatVersion
+$env:LERC_ROOT = $lercroot
+Write-Host "lerc Environment Loaded (Version: $lercversion) (Bin: $lercbin)" -ForegroundColor Green
+Write-Host "LERC_ROOT: $env:LERC_ROOT" -ForegroundColor Gray
+'@  -replace "VALUE_ROOT_PATH", $lercInstallDir `
+    -replace "VALUE_BIN_PATH", $lercBinPath `
+    -replace "VALUE_VERSION", $lercVersion
 
-        $MachineEnvContent | Out-File -FilePath $libexpatMachineEnvScript -Encoding utf8
-        Write-Host "Created: $libexpatMachineEnvScript" -ForegroundColor Gray
+        $MachineEnvContent | Out-File -FilePath $lercMachineEnvScript -Encoding utf8
+        Write-Host "Created: $lercMachineEnvScript" -ForegroundColor Gray
         
         # --- Interaction: Prompt to apply persistent changes ---
         Write-Host ""
-        $choice = Read-Host "Do you want to run the Machine Environment script now to persist libexpat changes to the Registry? (y/n)"
+        $choice = Read-Host "Do you want to run the Machine Environment script now to persist lerc changes to the Registry? (y/n)"
         if ($choice -eq 'y' -or $choice -eq 'Y') {
-            Write-Host "Executing $libexpatMachineEnvScript..." -ForegroundColor Yellow
+            Write-Host "Executing $lercMachineEnvScript..." -ForegroundColor Yellow
             try {
                 # Start the generated script. It handles its own elevation logic.
-                & $libexpatMachineEnvScript
+                & $lercMachineEnvScript
             }
             catch {
                 Write-Error "Failed to execute the Machine Environment script: $($_.Exception.Message)"
             }
         }
         else {
-            Write-Host "Skipped persistent registry update. You can run it later at: $libexpatMachineEnvScript" -ForegroundColor Gray
+            Write-Host "Skipped persistent registry update. You can run it later at: $lercMachineEnvScript" -ForegroundColor Gray
         }
     }
     
     # --- Return to Start ---
     Pop-Location
     Write-Host "Successfully Done! and returned to: $(Get-Location)" -ForegroundColor DarkGreen
-}
-else {
-    Write-Error "libexpat.lib was not found in the $libexpatLibDir folder."
+} else {
+    Write-Error "Lerc library was not found in the $lercLibDir folder."
     Pop-Location; return
 }

@@ -1,30 +1,28 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # project: buildtools
-# file: build-libxml2.ps1
-# created: 2026-04-11
-# lastModified: 2026-05-01
+# file: build-libpng.ps1
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
     [string]$workspacePath = $null,
+
+    [Parameter(HelpMessage = "libpng git repo url", Mandatory = $false)]
+    [string]$gitUrl = "https://github.com/pnggroup/libpng.git",
     
-    [Parameter(HelpMessage = "libxml2 git repo url", Mandatory = $false)]
-    [string]$gitUrl = "https://github.com/GNOME/libxml2.git",
+    [Parameter(HelpMessage = "libpng git branch to sync from", Mandatory = $false)]
+    [string]$gitBranch = "libpng18",
+
+    [Parameter(HelpMessage = "Path for libpng library storage", Mandatory = $false)]
+    [string]$libpngInstallDir = $null,
     
-    [Parameter(HelpMessage = "libxml2 git branch to sync from", Mandatory = $false)]
-    [string]$gitBranch = "master",
+    [Parameter(HelpMessage = "Lib name, if it's building with a different name", Mandatory = $false)]
+    [string]$libpngLibName = "libpng",
     
-    [Parameter(HelpMessage = "Path for libxml2 library storage", Mandatory = $false)]
-    [string]$libxml2InstallDir = $null,
-    
-    [Parameter(HelpMessage = "Lib name, if it's building with a different name (fixit by changing it's default name beforehand)", Mandatory = $false)]
-    [string]$libxml2LibName = "libxml2",
-    
-    [Parameter(HelpMessage = "Force a full purge of the local libxml2 version before continuing", Mandatory = $false)]
+    [Parameter(HelpMessage = "Force a full purge of the local libpng version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
     
-    [Parameter(HelpMessage = "Add's libxml2 Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
+    [Parameter(HelpMessage = "Add's libpng Machine Environment Variables", Mandatory = $false)]
     [switch]$withMachineEnvironment
 )
 
@@ -36,7 +34,6 @@ if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env
 # 1. Architecture Detection
 $currentArch = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLower()
 
-# Map arch names to folder names
 $archMap = @{ "x64" = "x64"; "arm64" = "arm64" }
 $archFolder = $archMap[$currentArch]
 
@@ -48,13 +45,13 @@ if (-not $archFolder) {
 # 2. Platform Detection
 if ($IsWindows) {
     $platform = "windows"
-    if ([string]::IsNullOrWhitespace($libxml2InstallDir)) { $libxml2InstallDir = "$env:LIBRARIES_PATH\libxml2" }
-    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\build-libxml2.ps1"
+    if ([string]::IsNullOrWhitespace($libpngInstallDir)) { $libpngInstallDir = "$env:LIBRARIES_PATH\libpng" }
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\build-libpng.ps1"
 }
 elseif ($IsLinux) {
     $platform = "linux"
-    if ([string]::IsNullOrWhitespace($libxml2InstallDir)) { $libxml2InstallDir = "$env:LIBRARIES_PATH/libxml2" }
-    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)/build-libxml2.ps1"
+    if ([string]::IsNullOrWhitespace($libpngInstallDir)) { $libpngInstallDir = "$env:LIBRARIES_PATH/libpng" }
+    $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)/build-libpng.ps1"
 }
 else {
     Write-Error "Unsupported Operating System."
@@ -65,7 +62,7 @@ if (Test-Path $targetScript) {
     Write-Host "[OS/ARCH] $platform $currentArch detected. Delegating..." -ForegroundColor Cyan
     
     # 1. Ensure the default path is captured if not explicitly provided by the user
-    $DirParams = 'workspacePath', 'gitUrl', 'gitBranch', 'libxml2InstallDir', 'libxml2LibName'
+    $DirParams = 'workspacePath', 'gitUrl', 'gitBranch', 'libpngInstallDir', 'libpngLibName'
     foreach ($ParamName in $DirParams) {
         if (-not $PSBoundParameters.ContainsKey($ParamName)) {
             # Dynamically get the value of the local variable with the same name

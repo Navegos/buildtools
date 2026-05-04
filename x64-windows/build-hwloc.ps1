@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/build-hwloc.ps1
 # created: 2026-03-14
-# lastModified: 2026-04-26
+# lastModified: 2026-05-03
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -37,7 +37,7 @@ $hwlocWithMachineEnvironment = $withMachineEnvironment
 
 # 1. Bootstrap Environment if variables are missing
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH)) {
-    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
+    Write-Error "User Environment variables missing. Please run adduserpaths.ps1 -LibrariesDir 'Path\for\Libraries' -BinariesDir 'Path\for\Binaries' -EnvironmentDir 'Path\for\Environment'"
     return
 }
 
@@ -118,7 +118,7 @@ if ([string]::IsNullOrWhiteSpace($env:SHARED_LIB_XML2) -or -not (Test-Path $env:
         $libxml2BuildScript = Join-Path $PSScriptRoot "build-libxml2.ps1"
         if (Test-Path $libxml2BuildScript) {
             $libxml2InstallDir = Join-Path $RoothwlocInstallDir "libxml2"
-            & $libxml2BuildScript -workspacePath $RoothwlocWorkspacePath -libxml2InstallDir $libxml2InstallDir
+            . $libxml2BuildScript -workspacePath $RoothwlocWorkspacePath -libxml2InstallDir $libxml2InstallDir
         } else {
             Write-Error "CRITICAL: Cannot build libxml2. libxml2 is missing and $libxml2BuildScript was not found."
             return
@@ -170,6 +170,10 @@ $url            = $RepoUrl
 
 $hwlocEnvScript = Join-Path $EnvironmentDir "env-hwloc.ps1"
 $hwlocMachineEnvScript = Join-Path $EnvironmentDir "machine-env-hwloc.ps1"
+
+$GlobalBinDir = "$env:BINARIES_PATH"
+$hwloctools = @("hwloc-bind.exe", "hwloc-calc.exe", "hwloc-diff.exe", "hwloc-distrib.exe", "hwloc-gather-cpuid.exe",
+                "hwloc-info.exe", "hwloc-patch.exe", "lstopo.exe", "lstopo-no-graphics.exe", "lstopo-win.exe")
 
 # --- 1. Cleanup Mechanism ---
 function Invoke-hwlocVersionPurge {
@@ -280,22 +284,16 @@ Write-Host "[REMOVED] ($TargetScope) all '*$hwlocroot*' removed from EXTCOMPLIBS
         Remove-Item $Source -Recurse -Force -ErrorAction SilentlyContinue
     }
     
+    foreach ($hwloctool in $hwloctools) {
+        $target = Join-Path $GlobalBinDir $hwloctool
+        if (Test-Path $target) { Remove-Item $target -Force -ErrorAction SilentlyContinue; Write-Host "  [REMOVED] Link: $hwloctool" -ForegroundColor Gray }
+    }
+
     # remove local Env variables for current session
-    Get-ChildItem Env:\HWLOC_PATH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\HWLOC_ROOT* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\HWLOC_BIN* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\HWLOC_INCLUDE_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\HWLOC_LIBRARY_DIR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\BINARY_LIB_HWLOC* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\SHARED_LIB_HWLOC* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\STATIC_LIB_HWLOC* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\HWLOC_LIB_NAME* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\HWLOC_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\HWLOC_MAJOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\HWLOC_MINOR* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\HWLOC_PATCH* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\HWLOC_ABI_VERSION* | Remove-Item -ErrorAction SilentlyContinue
-    Get-ChildItem Env:\HWLOC_SO_VERSION* | Remove-Item -ErrorAction SilentlyContinue
+    Get-ChildItem Env:\HWLOC_* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\BINARY_LIB_HWLOC* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\SHARED_LIB_HWLOC* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:\STATIC_LIB_HWLOC* | ForEach-Object { Remove-Item Env:\$($_.Name) -ErrorAction SilentlyContinue }
     
     $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
     $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split ';' | Where-Object { 
@@ -345,12 +343,16 @@ if (Test-Path $Source) {
     Write-Host "Syncing hwloc ($Branch) at $Source..." -ForegroundColor Cyan
     Set-Location $Source
     git fetch --all
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git fetch failed."; Pop-Location; return }
     git reset --hard "origin/$Branch"
+    git clean -xdf
     git pull --recurse-submodules --force
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git pull failed."; Pop-Location; return }
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 } else {
     Write-Host "Cloning hwloc ($Branch) into $Source..." -ForegroundColor Cyan
     git clone --recurse-submodules $RepoUrl $Source -b $Branch
+    if ($LASTEXITCODE -ne 0) { Write-Error "Git clone failed."; Pop-Location; return }
     Set-Location $Source
     $tagCommit = (& git rev-parse --verify HEAD).Trim()
 }
@@ -459,7 +461,7 @@ $CommonCmakeArgs = @(
 )
 
 # --- 9. STAGE 1: Build Static Libraries ---
-Write-Host "Building Static (hwlocs.lib)..." -ForegroundColor Cyan
+Write-Host "Building Static (hwloc_static.lib)..." -ForegroundColor Cyan
 cmake $CommonCmakeArgs `
     -S "$CMakeSource" `
     -B "$BuildDirStatic" `
@@ -484,12 +486,12 @@ cmake --build "$BuildDirStatic" --target install --config Release --parallel
 
 if ($LASTEXITCODE -ne 0) { Write-Error "hwloc Build failed with exit code $LASTEXITCODE"; Pop-Location; return }
 
-# Rename static lib to hwlocs.lib to avoid collision
+# Rename static lib to hwloc_static.lib to avoid collision
 $StaticLibPath = Join-Path $hwlocInstallDir "lib/hwloc.lib"
-$NewStaticName = Join-Path $hwlocInstallDir "lib/hwlocs.lib"
+$NewStaticName = Join-Path $hwlocInstallDir "lib/hwloc_static.lib"
 if (Test-Path $StaticLibPath) {
     Move-Item -Path $StaticLibPath -Destination $NewStaticName -Force -ErrorAction SilentlyContinue
-    Write-Host "Static library renamed to hwlocs.lib" -ForegroundColor Gray
+    Write-Host "Static library renamed to hwloc_static.lib" -ForegroundColor Gray
 }
 
 # --- 10. STAGE 2: Build Shared Libraries ---
@@ -528,13 +530,13 @@ $hwlocLibDir = Join-Path $hwlocInstallDir "lib"
 $hwlocBinPath = Join-Path $hwlocInstallDir "bin"
 $hwlocCMakePath = $hwlocInstallDir.Replace('\', '/')
 
-$StaticLib = Join-Path $hwlocLibDir ("$hwlocLibName" + "static.lib")
+$StaticLib = Join-Path $hwlocLibDir ("$hwlocLibName" + "_static.lib")
 $SharedLib = Join-Path $hwlocLibDir "$hwlocLibName.lib"
 $BinaryLib = Join-Path $hwlocBinPath "$hwlocLibName.dll"
 $versionFile = Join-Path $hwlocInstallDir "version.json"
 
-# Fallback check for "hwloc.lib" / "hwlocs.lib" naming convention
-if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $hwlocLibDir ("$hwlocLibName" + "s.lib") }
+# Fallback check for "hwloc.lib" / "hwloc_static.lib" naming convention
+#if (-not (Test-Path $StaticLib)) { $StaticLib = Join-Path $hwlocLibDir ("$hwlocLibName" + "_static.lib") }
 #if (-not (Test-Path $SharedLib)) { $SharedLib = Join-Path $hwlocLibDir "hwloc.lib" }
 #if (-not (Test-Path $BinaryLib)) { $BinaryLib = Join-Path $hwlocBinPath "hwloc.dll" }
 
@@ -548,8 +550,6 @@ if (-not (Test-Path $hwlocHeader)) { Copy-Item -Path "$hwlocbuildHeader" -Destin
 Remove-Item $BuildDirShared -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item $BuildDirStatic -Recurse -Force -ErrorAction SilentlyContinue
 
-$hwloctools = @("hwloc-bind.exe", "hwloc-calc.exe", "hwloc-diff.exe", "hwloc-distrib.exe", "hwloc-gather-cpuid.exe",
-                "hwloc-info.exe", "hwloc-patch.exe", "lstopo.exe", "lstopo-no-graphics.exe", "lstopo-win.exe")
 foreach ($hwloctool in $hwloctools) {
     $target = Join-Path $GlobalBinDir $hwloctool
     if (Test-Path $target) { Remove-Item $target -Force -ErrorAction SilentlyContinue }
