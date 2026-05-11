@@ -1,0 +1,38 @@
+import { Button, VerticalBox, ListView, StandardTableView, LineEdit } from "std-widgets.slint";
+
+export component ControlPanel inherits Window {
+    title: "BuildTools Dist-Build Cluster";
+    width: 800px;
+    height: 600px;
+
+    callback run_script(string);
+    callback login();
+
+    in property <bool> authenticated: false;
+    in property <string> auth_status: "Not Logged In";
+
+    VerticalBox {
+        if !authenticated : VerticalBox {
+            alignment: center;
+            Text { text: "Welcome to BuildTools Dist-Build Cluster"; horizontal-alignment: center; }
+            Text { text: auth_status; horizontal-alignment: center; }
+            Button {
+                text: "Login with Rauthy (SSO)";
+                clicked => { root.login(); }
+            }
+        }
+        if authenticated : VerticalBox {
+            Text { text: "Authenticated. Cluster Controller Ready."; }
+            
+            LineEdit {
+                placeholder-text: "Enter script name (e.g., build-zlib.ps1)";
+                accepted(text) => { root.run_script(text); }
+            }
+
+            Button {
+                text: "Distribute Build via Quinn";
+                clicked => { root.run_script("build-zlib.ps1"); }
+            }
+        }
+    }
+}

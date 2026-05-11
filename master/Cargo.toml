@@ -1,0 +1,11 @@
+[package]
+name = "buildtools-master"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.37", features = ["full"] }
+quinn = "0.11.2"
+rustls = { version = "0.23", features = ["ring"] }
+rcgen = "0.14.7"
+anyhow = "1.0"

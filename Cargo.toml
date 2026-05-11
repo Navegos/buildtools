@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "master",
+    "controller",
+    "worker"
+]
+resolver = "2"
