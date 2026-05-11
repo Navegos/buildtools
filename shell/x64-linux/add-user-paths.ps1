@@ -220,8 +220,15 @@ if (Test-Path $bashrc) {
         Write-Host "[UPDATED] Appended BUILDTOOLS block to $bashrc" -ForegroundColor Green
     }
     
-    # Direct Out-File natively preserves existing file ownership and permissions on Linux
-    $bashrcContent | Out-File -FilePath $bashrc -Encoding utf8 -Force
+    if (-not [string]::IsNullOrEmpty($sudoUser)) {
+        $tempBashrc = "/tmp/bashrc_update_$(Get-Random)"
+        $bashrcContent | Out-File -FilePath $tempBashrc -Encoding utf8 -Force
+        & chown "${sudoUser}:$sudoUser" $tempBashrc
+        & sudo -u $sudoUser cp $tempBashrc $bashrc
+        Remove-Item $tempBashrc -Force -ErrorAction SilentlyContinue
+    } else {
+        $bashrcContent | Out-File -FilePath $bashrc -Encoding utf8 -Force
+    }
 }
 
 # --- 5. Developer Mode & Sideloading ---

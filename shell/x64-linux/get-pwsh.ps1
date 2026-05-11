@@ -112,8 +112,15 @@ function Install-OrUpdatePwsh {
         $NewBashrc = "# BUILDTOOLS_BEGIN`n$pwshExport`n# BUILDTOOLS_END`n"
     }
     
-    # Direct Out-File natively preserves existing file ownership and permissions on Linux
-    $NewBashrc | Out-File -FilePath $targetBashrc -Encoding ascii -Force
+    if (-not [string]::IsNullOrEmpty($sudoUser)) {
+        $tempBashrc = "/tmp/bashrc_pwsh_update_$(Get-Random)"
+        $NewBashrc | Out-File -FilePath $tempBashrc -Encoding ascii -Force
+        & chown "${sudoUser}:$sudoUser" $tempBashrc
+        & sudo -u $sudoUser cp $tempBashrc $targetBashrc
+        Remove-Item $tempBashrc -Force -ErrorAction SilentlyContinue
+    } else {
+        $NewBashrc | Out-File -FilePath $targetBashrc -Encoding ascii -Force
+    }
     
     Write-Host "[SUCCESS] PowerShell 7 provisioned at $powershellInstallDir" -ForegroundColor Green
 }
