@@ -85,7 +85,11 @@ update_bashrc_block() {
     
     grep -v "$match_string" "$bashrc" > "${bashrc}.tmp" || true
     if grep -q "# BUILDTOOLS_BEGIN" "${bashrc}.tmp"; then
-        awk -v line="$new_line" '/# BUILDTOOLS_END/ { print line; print; next } { print }' "${bashrc}.tmp" > "${bashrc}"
+        awk -v line="$new_line" '
+        /# BUILDTOOLS_BEGIN/ { in_block=1; print; next }
+        /# BUILDTOOLS_END/ { if(in_block) { print line }; print; in_block=0; next }
+        { print }
+        ' "${bashrc}.tmp" > "${bashrc}"
     else
         cat "${bashrc}.tmp" > "${bashrc}"
         echo -e "\n# BUILDTOOLS_BEGIN\n$new_line\n# BUILDTOOLS_END\n" >> "${bashrc}"

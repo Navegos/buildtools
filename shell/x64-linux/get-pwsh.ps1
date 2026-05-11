@@ -101,10 +101,13 @@ function Install-OrUpdatePwsh {
         $bashrcContent = Get-Content -Path $targetBashrc -Raw
         $CleanedBashrc = ($bashrcContent -split "`r?\n" | Where-Object { $_ -notlike "*$powershellInstallDir*" }) -join "`n"
         
-        if ($CleanedBashrc -match "(?s)# BUILDTOOLS_BEGIN\r?\n(.*?)# BUILDTOOLS_END") {
-            $blockContent = $Matches[1].TrimEnd()
-            $blockContent = if ([string]::IsNullOrWhiteSpace($blockContent)) { "$pwshExport`n" } else { "$blockContent`n$pwshExport`n" }
-            $NewBashrc = $CleanedBashrc -replace "(?s)# BUILDTOOLS_BEGIN\r?\n.*?# BUILDTOOLS_END", "# BUILDTOOLS_BEGIN`n$blockContent# BUILDTOOLS_END"
+        if ($CleanedBashrc -match "(?s)(.*?)# BUILDTOOLS_BEGIN\r?\n(.*?)# BUILDTOOLS_END(.*)") {
+            $before = $Matches[1]
+            $existingBlockContent = $Matches[2].TrimEnd()
+            $after = $Matches[3]
+            
+            $blockContent = if ([string]::IsNullOrWhiteSpace($existingBlockContent)) { "$pwshExport" } else { "$existingBlockContent`n$pwshExport" }
+            $NewBashrc = $before + "# BUILDTOOLS_BEGIN`n$blockContent`n# BUILDTOOLS_END" + $after
         } else {
             $NewBashrc = $CleanedBashrc.TrimEnd() + "`n`n# BUILDTOOLS_BEGIN`n$pwshExport`n# BUILDTOOLS_END`n"
         }
