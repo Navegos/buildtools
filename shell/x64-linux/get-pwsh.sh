@@ -72,30 +72,33 @@ install_or_update_pwsh() {
         target_bashrc=$(eval echo "~$SUDO_USER/.bashrc")
     fi
 
-    update_bashrc_block() {
-        local bashrc="$1"
-        local new_line="$2"
-        local match_string="$3"
-        
-        if [ ! -f "$bashrc" ]; then
-            echo -e "# BUILDTOOLS_BEGIN\n$new_line\n# BUILDTOOLS_END\n" > "$bashrc"
-            return
-        fi
-        
-        grep -v "$match_string" "$bashrc" > "${bashrc}.tmp" || true
-        if grep -q "# BUILDTOOLS_BEGIN" "${bashrc}.tmp"; then
-            awk -v line="$new_line" '/# BUILDTOOLS_END/ { print line; print; next } { print }' "${bashrc}.tmp" > "${bashrc}"
-        else
-            cat "${bashrc}.tmp" > "${bashrc}"
-            echo -e "\n# BUILDTOOLS_BEGIN\n$new_line\n# BUILDTOOLS_END\n" >> "${bashrc}"
-        fi
-        rm -f "${bashrc}.tmp"
-    }
+    UPDATE_FUNC=$(cat << 'EOF'
+update_bashrc_block() {
+    local bashrc="$1"
+    local new_line="$2"
+    local match_string="$3"
+    
+    if [ ! -f "$bashrc" ]; then
+        echo -e "# BUILDTOOLS_BEGIN\n$new_line\n# BUILDTOOLS_END\n" > "$bashrc"
+        return
+    fi
+    
+    grep -v "$match_string" "$bashrc" > "${bashrc}.tmp" || true
+    if grep -q "# BUILDTOOLS_BEGIN" "${bashrc}.tmp"; then
+        awk -v line="$new_line" '/# BUILDTOOLS_END/ { print line; print; next } { print }' "${bashrc}.tmp" > "${bashrc}"
+    else
+        cat "${bashrc}.tmp" > "${bashrc}"
+        echo -e "\n# BUILDTOOLS_BEGIN\n$new_line\n# BUILDTOOLS_END\n" >> "${bashrc}"
+    fi
+    rm -f "${bashrc}.tmp"
+}
+EOF
+)
 
     if [ -n "$SUDO_USER" ]; then
-        export -f update_bashrc_block
-        sudo -u "$SUDO_USER" bash -c "update_bashrc_block \"$target_bashrc\" 'export PATH=\"\$PATH:$POWERSHELL_INSTALL_DIR\"' \"$POWERSHELL_INSTALL_DIR\""
+        sudo -u "$SUDO_USER" bash -c "$UPDATE_FUNC; update_bashrc_block \"$target_bashrc\" 'export PATH=\"\$PATH:$POWERSHELL_INSTALL_DIR\"' \"$POWERSHELL_INSTALL_DIR\""
     else
+        eval "$UPDATE_FUNC"
         update_bashrc_block "$target_bashrc" "export PATH=\"\$PATH:$POWERSHELL_INSTALL_DIR\"" "$POWERSHELL_INSTALL_DIR"
     fi
 

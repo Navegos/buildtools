@@ -30,19 +30,19 @@ $IsAdmin = (id -u) -eq 0
 if (-not $IsAdmin) {
     Write-Host "Elevation required. Relaunching as root (sudo)..." -ForegroundColor Yellow
     # Pass the parameters to the elevated process so they aren't lost
-    $ArgList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $PSCommandPath)
+    $ArgList = @("pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"")
     foreach ($Parameter in $PSBoundParameters.GetEnumerator()) {
         if ($Parameter.Value -is [switch]) {
             if ($Parameter.Value) { $ArgList += "-$($Parameter.Key)" }
         }
         else {
             $ArgList += "-$($Parameter.Key)"
-            $ArgList += "$($Parameter.Value)"
+            $ArgList += "`"$($Parameter.Value)`""
         }
     }
     
     try {
-        Start-Process sudo -ArgumentList (("pwsh") + $ArgList) -Wait -ErrorAction Stop
+        Start-Process sudo -ArgumentList ($ArgList -join ' ') -Wait -ErrorAction Stop
     }
     catch {
         Write-Error "Failed to elevate. Please run this script with sudo pwsh."

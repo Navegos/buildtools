@@ -15,9 +15,9 @@ $IsAdmin = (id -u) -eq 0
 
 if (-not $IsAdmin) {
     Write-Host "--- Elevation required. Relaunching with sudo... ---" -ForegroundColor Yellow
-    $ArgList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $PSCommandPath, "-powershellInstallDir", $powershellInstallDir)
+    $ArgList = @("pwsh", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"", "-powershellInstallDir", "`"$powershellInstallDir`"")
     try {
-        Start-Process sudo -ArgumentList (("pwsh") + $ArgList) -Wait -ErrorAction Stop
+        Start-Process sudo -ArgumentList ($ArgList -join ' ') -Wait -ErrorAction Stop
     }
     catch {
         Write-Error "Failed to elevate. Please run this script with sudo pwsh."
