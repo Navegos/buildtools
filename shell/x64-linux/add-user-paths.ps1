@@ -93,7 +93,7 @@ foreach ($Entry in $EnvMapping.GetEnumerator())
     {
         New-Item -Path $TargetPath -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
         if (-not [string]::IsNullOrEmpty($env:SUDO_USER)) {
-            & chown -R "$($env:SUDO_USER):$($env:SUDO_USER)" $TargetPath
+            & /bin/bash -c "chown -R $($env:SUDO_USER):$($env:SUDO_USER) `"$TargetPath`""
         }
         Write-Host "[NEW] Created directory: $TargetPath" -ForegroundColor Cyan
     } else {
@@ -223,8 +223,8 @@ if (Test-Path $bashrc) {
     if (-not [string]::IsNullOrEmpty($sudoUser)) {
         $tempBashrc = "/tmp/bashrc_update_$(Get-Random)"
         $bashrcContent | Out-File -FilePath $tempBashrc -Encoding utf8 -Force
-        & chown "${sudoUser}:$sudoUser" $tempBashrc
-        & sudo -u $sudoUser cp $tempBashrc $bashrc
+        & /bin/bash -c "chown ${sudoUser}:$sudoUser `"$tempBashrc`""
+        & /bin/bash -c "sudo -u $sudoUser cp `"$tempBashrc`" `"$bashrc`""
         Remove-Item $tempBashrc -Force -ErrorAction SilentlyContinue
     } else {
         $bashrcContent | Out-File -FilePath $bashrc -Encoding utf8 -Force
