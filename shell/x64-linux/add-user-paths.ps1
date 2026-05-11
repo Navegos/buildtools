@@ -191,18 +191,11 @@ if ($ProfilePaths.Count -gt 0) {
 if (Test-Path $bashrc) {
     $bashrcContent = Get-Content $bashrc -Raw
 
-    $legacyRegex = "(?s)\r?\n?# Source BuildTools Begin.*?# Source BuildTools End\r?\n?"
-    if ($bashrcContent -match $legacyRegex) {
-        $bashrcContent = $bashrcContent -replace $legacyRegex, "`n"
-    }
-
-    # Remove legacy .buildtools_user_paths.sh script inclusion and the file itself
-    $legacyProfile = "$targetHome/.buildtools_user_paths.sh"
-    $bashrcContent = ($bashrcContent -split "`r?\n" | Where-Object { $_ -notlike "*$legacyProfile*" }) -join "`n"
-    if (Test-Path $legacyProfile) { Remove-Item $legacyProfile -Force -ErrorAction SilentlyContinue }
-
-    if ($bashrcContent -match "(?s)# BUILDTOOLS_BEGIN\r?\n(.*?)# BUILDTOOLS_END") {
-        $existingBlockContent = $Matches[1].TrimEnd()
+    if ($bashrcContent -match "(?s)(.*?)# BUILDTOOLS_BEGIN\r?\n(.*?)# BUILDTOOLS_END(.*)") {
+        $before = $Matches[1]
+        $existingBlockContent = $Matches[2].TrimEnd()
+        $after = $Matches[3]
+        
         $existingLines = $existingBlockContent -split "`r?\n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
         $filteredLines = @()
         foreach ($line in $existingLines) {
@@ -212,11 +205,12 @@ if (Test-Path $bashrc) {
             if ($keep) { $filteredLines += $line }
         }
         $finalBlockLines = $filteredLines + ($blockContent -split "`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-        $mergedBlockContent = ($finalBlockLines -join "`n") + "`n"
-        $bashrcContent = $bashrcContent -replace "(?s)# BUILDTOOLS_BEGIN\r?\n.*?# BUILDTOOLS_END", "# BUILDTOOLS_BEGIN`n$mergedBlockContent# BUILDTOOLS_END"
+        $mergedBlockContent = ($finalBlockLines -join "`n")
+        
+        $bashrcContent = $before + "# BUILDTOOLS_BEGIN`n$mergedBlockContent`n# BUILDTOOLS_END" + $after
         Write-Host "[UPDATED] Updated BUILDTOOLS block in $bashrc" -ForegroundColor Green
     } else {
-        $bashrcContent = $bashrcContent.TrimEnd() + "`n`n# BUILDTOOLS_BEGIN`n$blockContent# BUILDTOOLS_END`n"
+        $bashrcContent = $bashrcContent.TrimEnd() + "`n`n# BUILDTOOLS_BEGIN`n$blockContent`n# BUILDTOOLS_END`n"
         Write-Host "[UPDATED] Appended BUILDTOOLS block to $bashrc" -ForegroundColor Green
     }
     
