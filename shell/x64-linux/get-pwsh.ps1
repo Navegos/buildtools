@@ -62,14 +62,14 @@ function Install-OrUpdatePwsh {
         New-Item -ItemType Directory -Path $powershellInstallDir -Force | Out-Null
     }
     
-    & /bin/bash -c "tar -xzf `"$tempTar`" -C `"$powershellInstallDir`""
+    & /bin/bash -c "PATH=/usr/bin:/bin:/usr/sbin:/sbin tar -xzf `"$tempTar`" -C `"$powershellInstallDir`""
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Extraction failed."
         exit 1
     }
     
     # Ensure the binary is executable
-    & /bin/bash -c "chmod +x `"$powershellInstallDir/pwsh`""
+    & /bin/bash -c "PATH=/usr/bin:/bin:/usr/sbin:/sbin chmod +x `"$powershellInstallDir/pwsh`""
     
     Remove-Item $tempTar -Force -ErrorAction SilentlyContinue
     
@@ -116,10 +116,11 @@ function Install-OrUpdatePwsh {
     }
     
     if (-not [string]::IsNullOrEmpty($sudoUser)) {
-        $tempBashrc = "/tmp/bashrc_pwsh_update_$(Get-Random)"
+        $targetHome = Split-Path $targetBashrc -Parent
+        $tempBashrc = Join-Path $targetHome ".bashrc_pwsh_update_$(Get-Random)"
         $NewBashrc | Out-File -FilePath $tempBashrc -Encoding ascii -Force
-        & /bin/bash -c "chown ${sudoUser}:$sudoUser `"$tempBashrc`""
-        & /bin/bash -c "sudo -u $sudoUser cp `"$tempBashrc`" `"$targetBashrc`""
+        & /bin/bash -c "PATH=/usr/bin:/bin:/usr/sbin:/sbin chown ${sudoUser}:$sudoUser `"$tempBashrc`""
+        & /bin/bash -c "PATH=/usr/bin:/bin:/usr/sbin:/sbin sudo -u $sudoUser cp `"$tempBashrc`" `"$targetBashrc`""
         Remove-Item $tempBashrc -Force -ErrorAction SilentlyContinue
     } else {
         $NewBashrc | Out-File -FilePath $targetBashrc -Encoding ascii -Force
