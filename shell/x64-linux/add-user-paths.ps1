@@ -92,6 +92,9 @@ foreach ($Entry in $EnvMapping.GetEnumerator())
     if (-not (Test-Path -Path $TargetPath))
     {
         New-Item -Path $TargetPath -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
+        if (-not [string]::IsNullOrEmpty($env:SUDO_USER)) {
+            & chown -R "$($env:SUDO_USER):$($env:SUDO_USER)" $TargetPath
+        }
         Write-Host "[NEW] Created directory: $TargetPath" -ForegroundColor Cyan
     } else {
         Write-Host "[OK] Directory exists: $TargetPath" -ForegroundColor DarkGray
@@ -205,7 +208,7 @@ if (Test-Path $bashrc) {
         foreach ($line in $existingLines) {
             $keep = $true
             foreach ($key in $ProfileVars.Keys) { if ($line -match "^export $key=") { $keep = $false; break } }
-            if ($line -match "^export PATH=" -and $line -match ":`\$BUILDTOOLS_PATH") { $keep = $false }
+            if ($line -match "^export PATH=" -and $line -match ':\$BUILDTOOLS_PATH') { $keep = $false }
             if ($keep) { $filteredLines += $line }
         }
         $finalBlockLines = $filteredLines + ($blockContent -split "`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
