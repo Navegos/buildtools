@@ -1,0 +1,14 @@
+[package]
+name = "buildtools-shell"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "build-helper"
+path = "src/bin/build.rs"
+
+[[bin]]
+name = "sync"
+path = "src/bin/sync.rs"
+
+[dependencies]

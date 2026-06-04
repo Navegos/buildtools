@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 Navegos. @DevelVitorF. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 # project: buildtools
-# file: build.ps1
+# file: env.ps1
 
 $binName = if ($IsWindows -or ($env:OS -eq "Windows_NT")) { "build-helper.exe" } else { "build-helper" }
 $rustBin = Join-Path $PSScriptRoot "target\release\$binName"
@@ -21,6 +21,6 @@ if (-not (Test-Path $rustBin)) {
     }
 }
 
-$env:BUILDTOOLS_CALLER = "build.ps1"
+$env:BUILDTOOLS_CALLER = "env.ps1"
 & $rustBin @args
 exit $LASTEXITCODE

@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/build-zlib.ps1
 # created: 2026-02-28
-# lastModified: 2026-05-11
+# lastModified: 2026-05-16
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -14,18 +14,21 @@ param (
     
     [Parameter(HelpMessage = "zlib git branch to sync from", Mandatory = $false)]
     [string]$gitBranch = "develop",
-
-    [Parameter(HelpMessage = "Path for zlib library storage", Mandatory = $false)]
-    [string]$zlibInstallDir = "$env:LIBRARIES_PATH\zlib",
     
     [Parameter(HelpMessage = "Lib name, if it's building with a different name (fixit by changing it's default name beforehand)", Mandatory = $false)]
     [string]$zLibName = "z",
+    
+    [Parameter(HelpMessage = "Path for zlib library storage", Mandatory = $false)]
+    [string]$zlibInstallDir = "$env:LIBRARIES_PATH\zlib",
     
     [Parameter(HelpMessage = "Force a full purge of the local zlib version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
     
     [Parameter(HelpMessage = "Add's Zlib Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
-    [switch]$withMachineEnvironment
+    [switch]$withMachineEnvironment,
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $RemainingArgs
 )
 
 # Capture parameters

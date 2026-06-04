@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/dep-python.ps1
 # created: 2026-03-14
-# lastModified: 2026-05-11
+# lastModified: 2026-05-13
 
 param (
     [Parameter(HelpMessage = "Path for python storage", Mandatory = $false)]
@@ -19,7 +19,10 @@ param (
     [switch]$dontUpdate,
     
     [Parameter(HelpMessage = "Add's Python Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
-    [switch]$withMachineEnvironment
+    [switch]$withMachineEnvironment,
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $RemainingArgs
 )
 
 # Capture parameters

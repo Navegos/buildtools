@@ -29,7 +29,10 @@ param (
     [switch]$forceCleanup,
     
     [Parameter(HelpMessage = "Add's libjpeg Machine Environment Variables", Mandatory = $false)]
-    [switch]$withMachineEnvironment
+    [switch]$withMachineEnvironment,
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $RemainingArgs
 )
 
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH) -or [string]::IsNullOrWhitespace($env:BUILDTOOLS_PATH) -or -not (Test-Path $env:BUILDTOOLS_PATH)) {
@@ -49,12 +52,12 @@ if (-not $archFolder) {
 }
 
 # 2. Platform Detection
-if ($IsWindows) {
+if ($env:HOST_IS_WINDOWS) {
     $platform = "windows"
     if ([string]::IsNullOrWhitespace($libjpegInstallDir)) { $libjpegInstallDir = "$env:LIBRARIES_PATH\libjpeg" }
     $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\build-libjpeg.ps1"
 }
-elseif ($IsLinux) {
+elseif ($env:HOST_IS_LINUX) {
     $platform = "linux"
     if ([string]::IsNullOrWhitespace($libjpegInstallDir)) { $libjpegInstallDir = "$env:LIBRARIES_PATH/libjpeg" }
     $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)/build-libjpeg.ps1"

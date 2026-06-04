@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/build-protobuf.ps1
 # created: 2026-03-10
-# lastModified: 2026-05-11
+# lastModified: 2026-05-13
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -16,7 +16,10 @@ param (
     [string]$gitBranch = "main",
 
     [Parameter(HelpMessage = "Path for protobuf library storage", Mandatory = $false)]
-    [string]$protoInstallDir = "$env:LIBRARIES_PATH\protobuf"
+    [string]$protoInstallDir = "$env:LIBRARIES_PATH\protobuf",
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $RemainingArgs
 )
 
 # Capture parameters

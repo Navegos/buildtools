@@ -3,10 +3,22 @@
 # SPDX-License-Identifier: Apache-2.0
 # project: buildtools
 # file: sync.sh
-# created: 2026-05-12
-# lastModified: 2026-05-11
 
 CWD="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RUST_BIN="$CWD/target/release/sync"
 
-bash "$CWD/shell/syncEnvironment.sh" "$@"
+if [ ! -f "$RUST_BIN" ]; then
+    echo "[INFO] Compiling Rust environment sync helper..."
+    if command -v cargo >/dev/null 2>&1; then
+        pushd "$CWD" >/dev/null
+        cargo build --release --bin sync
+        popd >/dev/null
+    fi
+    if [ ! -f "$RUST_BIN" ]; then
+        echo "[ERROR] Failed to compile or locate Rust sync helper at $RUST_BIN."
+        exit 1
+    fi
+fi
+
+"$RUST_BIN" "$@"
 exit $?

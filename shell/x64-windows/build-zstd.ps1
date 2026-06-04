@@ -3,32 +3,35 @@
 # project: buildtools
 # file: x64-windows/build-zstd.ps1
 # created: 2026-02-28
-# lastModified: 2026-05-11
+# lastModified: 2026-05-16
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
     [string]$workspacePath = $null,
 
     [Parameter(HelpMessage = "zstd git repo url", Mandatory = $false)]
-    [string]$gitUrl = "https://github.com/facebook/zstd.git",
+    [string]$gitUrl = $null,
     
     [Parameter(HelpMessage = "zstd git branch to sync from", Mandatory = $false)]
-    [string]$gitBranch = "dev",
+    [string]$gitBranch = $null,
 
     [Parameter(HelpMessage = "Lib name, if it's building with a different name (fixit by changing it's default name beforehand)", Mandatory = $false)]
-    [string]$zstdLibName = "zstd",
+    [string]$zstdLibName = $null,
     
     [Parameter(HelpMessage = "Path for zstd library storage", Mandatory = $false)]
     [string]$zstdInstallDir = $null,
     
     [Parameter(HelpMessage = "Target Build Type to build for", Mandatory = $false)]
-    [string]$targetBuildType = "Release",
+    [string]$targetBuildType = $null,
     
     [Parameter(HelpMessage = "Force a full purge of the local zstd version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
     
     [Parameter(HelpMessage = "Add's zstd Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
-    [switch]$withMachineEnvironment
+    [switch]$withMachineEnvironment,
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $RemainingArgs
 )
 
 # Get the correct list separator for the current OS (; on Win, : on Linux)
@@ -37,12 +40,23 @@ $Sep = [IO.Path]::PathSeparator
 # Get the correct folder separator (\ on Win, / on Linux)
 $DirSep = [IO.Path]::DirectorySeparatorChar
 
+if ([string]::IsNullOrWhitespace($gitUrl)) { $gitUrl = "https://github.com/facebook/zstd.git" }
+if ([string]::IsNullOrWhitespace($gitBranch)) { $gitBranch = "dev" }
+if ([string]::IsNullOrWhitespace($zstdLibName)) { $zstdLibName = "zstd" }
+if ($env:IS_TOOLCHAIN) {
+    if ([string]::IsNullOrWhitespace($zstdInstallDir)) { $zstdInstallDir = Join-Path $env:TARGET_USR_SYSROOT $zstdLibName }
+}
+else {
+    if ([string]::IsNullOrWhitespace($zstdInstallDir)) { $zstdInstallDir = Join-Path $env:LIBRARIES_PATH "$env:HOST_TRIPLET${DirSep}$zstdLibName" }
+}
+if ([string]::IsNullOrWhitespace($targetBuildType)) { $targetBuildType = "Release" }
+
 # Capture parameters
 $zstdWorkspacePath = $workspacePath
 $zstdGitUrl = $gitUrl
 $zstdGitBranch = $gitBranch
-$zstdArch = $env:TARGET_ARCH
-$zstdPlatform = $env:TARGET_PLATFORM
+$zstdArch = $env:HOST_ARCH
+$zstdPlatform = $env:HOST_PLATFORM
 if ($targetBuildType.ToLower() -eq "release")
 {
     $zstdBuildType = "Release"
@@ -72,7 +86,6 @@ else
     Write-Error "Unsupported build type: $targetBuildType. Supported: Debug, Release, RelWithDebInfo, MinSizeRel"
     return
 }
-$zstdTarget = $env:TARGET_TRIPLET
 $zstdForceCleanup = $forceCleanup
 $zstdWithMachineEnvironment = $withMachineEnvironment
 
@@ -84,14 +97,7 @@ if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env
 
 #$zstdtargetUsr = "usr$dirSep$zstdLibName"
 
-if ($env:IS_TOOLCHAIN) {
-    if ([string]::IsNullOrWhitespace($zstdInstallDir)) { $zstdInstallDir = Join-Path $env:TARGET_USR_SYSROOT $zstdLibName }
-    $targetEnvironmentDir = Join-Path $env:TARGET_SYSROOT "env"
-}
-else {
-    if ([string]::IsNullOrWhitespace($zstdInstallDir)) { $zstdInstallDir = Join-Path $env:LIBRARIES_PATH ("$zstdTarget$DirSep" + "zstd") }
-    $targetEnvironmentDir = Join-Path $env:ENVIRONMENT_PATH $zstdTarget
-}
+$targetEnvironmentDir = Join-Path $env:ENVIRONMENT_PATH $env:HOST_TRIPLET
 
 $EnvironmentDir = "$env:ENVIRONMENT_PATH"
 
@@ -241,36 +247,11 @@ function Invoke-zstdVersionPurge {
     Write-Host "--- Initiating zstd Purge ---" -ForegroundColor Cyan
 
     # Generate the purge script content independently of host platform, as it will be only executed in the target platform environment
-    if ($zstdWithMachineEnvironment -and $env:TARGET_HOST_IS_X64_WINDOWS)
+    if ($zstdWithMachineEnvironment -and $env:HOST_IS_X64_WINDOWS)
     {
-        if ($env:IS_TOOLCHAIN)
-        {
-            $zstdTargetPurgenvDir = Join-Path $zstdTargetEnvironmentDir "purgeenv"
-            if (-not (Test-Path $zstdTargetPurgenvDir)) {
-                New-Item -Path $zstdTargetPurgenvDir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
-            }
-            $zstdCleanMachineEnvScript = Join-Path $zstdTargetPurgenvDir "clean-machine-env-zstd.ps1"
-        }
-        else
-        {
-            $zstdCleanMachineEnvScript = Join-Path $env:TEMP "clean-machine-env-zstd.ps1"
-        }
+        $zstdCleanMachineEnvScript = Join-Path $env:TEMP "clean-machine-env-zstd.ps1"
 
-        # Generating Clean Machine Environment wich removes the persist registry machine Environment
-        if ($env:IS_TOOLCHAIN) {
-            $CleanMachineEnvContent = @'
-# zstd Clean Machine Environment Setup
-
-$Sep = [IO.Path]::PathSeparator
-$DirSep = [IO.Path]::DirectorySeparatorChar
-
-$zstdtargetUsr = "usr${DirSep}VALUE_LIB_NAME"
-$zstdroot = Join-Path (Split-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -Parent) $zstdtargetUsr
-
-'@ -replace "VALUE_LIB_NAME", $zstdLibName
-        }
-        else {
-            $CleanMachineEnvContent = @'
+        $CleanMachineEnvContent = @'
 # zstd Clean Machine Environment Setup
 
 $Sep = [IO.Path]::PathSeparator
@@ -279,7 +260,6 @@ $DirSep = [IO.Path]::DirectorySeparatorChar
 $zstdroot = "VALUE_ROOT_PATH"
 
 '@ -replace "VALUE_ROOT_PATH", $InstallPath
-        }
 
         $CleanMachineEnvContent += @'
 if (-not $env:HOST_IS_X64_WINDOWS) {
@@ -339,30 +319,27 @@ Write-Host "[REMOVED] ($TargetScope) all '*$zstdroot*' removed from EXTCOMPLIBS_
         $CleanMachineEnvContent | Out-File -FilePath $zstdCleanMachineEnvScript -Encoding utf8
         Write-Host "Created: $zstdCleanMachineEnvScript" -ForegroundColor Gray
 
-        # don't execute the cclean machine env script if we are in a toolchain environment, as it will be only executed in the target platform environment, and executing it here would cause issues with the current host environment
-        if (-not $env:IS_TOOLCHAIN) {
-            # --- Interaction: Prompt to remove persistent changes ---
-            Write-Host ""
-            $choice = Read-Host "Administrator rights required to Clean Machine Environment zstd changes? (y/n)"
-            if ($choice -eq 'y' -or $choice -eq 'Y') {
-                Write-Host "Executing $zstdCleanMachineEnvScript..." -ForegroundColor Yellow
-                try {
-                    # Start the generated script. It handles its own elevation logic.
-                    & $zstdCleanMachineEnvScript
-                }
-                catch {
-                    Write-Error "Failed to execute the Clean Machine Environment script: $($_.Exception.Message)"
-                    Pop-Location; return
-                }
+        # --- Interaction: Prompt to remove persistent changes ---
+        Write-Host ""
+        $choice = Read-Host "Administrator rights required to Clean Machine Environment zstd changes? (y/n)"
+        if ($choice -eq 'y' -or $choice -eq 'Y') {
+            Write-Host "Executing $zstdCleanMachineEnvScript..." -ForegroundColor Yellow
+            try {
+                # Start the generated script. It handles its own elevation logic.
+                & $zstdCleanMachineEnvScript
             }
-            else {
-                Write-Error "Skipped Clean Machine Environment zstd changes."
+            catch {
+                Write-Error "Failed to execute the Clean Machine Environment script: $($_.Exception.Message)"
                 Pop-Location; return
             }
-
-            # Cleanup
-            Remove-Item $zstdCleanMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
         }
+        else {
+            Write-Error "Skipped Clean Machine Environment zstd changes."
+            Pop-Location; return
+        }
+
+        # Cleanup
+        Remove-Item $zstdCleanMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     # 2. Filesystem Clean (Requires checking for locked files)
@@ -384,10 +361,10 @@ Write-Host "[REMOVED] ($TargetScope) all '*$zstdroot*' removed from EXTCOMPLIBS_
         Remove-Item $Source -Recurse -Force -ErrorAction SilentlyContinue
     }
     
-    Get-ChildItem Env:/ZSTD_* | ForEach-Object { Remove-Item Env:/$($_.Name) -ErrorAction SilentlyContinue }
-    Get-ChildItem Env:/BINARY_LIB_ZSTD* | ForEach-Object { Remove-Item Env:/$($_.Name) -ErrorAction SilentlyContinue }
-    Get-ChildItem Env:/SHARED_LIB_ZSTD* | ForEach-Object { Remove-Item Env:/$($_.Name) -ErrorAction SilentlyContinue }
-    Get-ChildItem Env:/STATIC_LIB_ZSTD* | ForEach-Object { Remove-Item Env:/$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:${DirSep}ZSTD_* | ForEach-Object { Remove-Item Env:${DirSep}$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:${DirSep}BINARY_LIB_ZSTD* | ForEach-Object { Remove-Item Env:${DirSep}$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:${DirSep}SHARED_LIB_ZSTD* | ForEach-Object { Remove-Item Env:${DirSep}$($_.Name) -ErrorAction SilentlyContinue }
+    Get-ChildItem Env:${DirSep}STATIC_LIB_ZSTD* | ForEach-Object { Remove-Item Env:${DirSep}$($_.Name) -ErrorAction SilentlyContinue }
 
     $CurrentCMakePrefixPath = $env:CMAKE_PREFIX_PATH
     $CleanedCMakePrefixPathList = $CurrentCMakePrefixPath -split "$Sep" | Where-Object { 
@@ -398,35 +375,32 @@ Write-Host "[REMOVED] ($TargetScope) all '*$zstdroot*' removed from EXTCOMPLIBS_
     $NewCMakePrefixPath = ($NewCMakePrefixPath + "$Sep").Replace("$Sep$Sep", "$Sep")
     $env:CMAKE_PREFIX_PATH = $NewCMakePrefixPath
     
-    $CurrentIncludePath = $env:INCLUDE
+    $CurrentIncludePath = $env:CMAKE_INCLUDE_PATH
     $CleanedIncludePathList = $CurrentIncludePath -split "$Sep" | Where-Object { 
         -not [string]::IsNullOrWhitespace($_) -and 
         $_ -notlike "*$InstallPath*"
     }
     $NewIncludePath = ($CleanedIncludePathList -join "$Sep").Replace("$Sep$Sep", "$Sep")
     $NewIncludePath = ($NewIncludePath + "$Sep").Replace("$Sep$Sep", "$Sep")
-    $env:INCLUDE = $NewIncludePath
+    $env:CMAKE_INCLUDE_PATH = $NewIncludePath
     
-    $CurrentLibPath = $env:LIB
+    $CurrentLibPath = $env:CMAKE_LIBRARY_PATH
     $CleanedLibPathList = $CurrentLibPath -split "$Sep" | Where-Object { 
         -not [string]::IsNullOrWhitespace($_) -and 
         $_ -notlike "*$InstallPath*"
     }
     $NewLibPath = ($CleanedLibPathList -join "$Sep").Replace("$Sep$Sep", "$Sep")
     $NewLibPath = ($NewLibPath + "$Sep").Replace("$Sep$Sep", "$Sep")
-    $env:LIB = $NewLibPath
+    $env:CMAKE_LIBRARY_PATH = $NewLibPath
     
-    # cross-compiling builds should not modify the host PATH, as it can cause issues with the host environment, and the changes won't have any effect on the target environment, which is where the new PATH entries would be needed
-    if (-not $env:TARGET_CROSS_COMPILING) {
-        $CurrentPath = $env:PATH
-        $CleanedPathList = $CurrentPath -split "$Sep" | Where-Object { 
-            -not [string]::IsNullOrWhitespace($_) -and 
-            $_ -notlike "*$InstallPath*"
-        }
-        $NewPath = ($CleanedPathList -join "$Sep").Replace("$Sep$Sep", "$Sep")
-        $NewPath = ($NewPath + "$Sep").Replace("$Sep$Sep", "$Sep")
-        $env:PATH = $NewPath
+    $CurrentPath = $env:PATH
+    $CleanedPathList = $CurrentPath -split "$Sep" | Where-Object { 
+        -not [string]::IsNullOrWhitespace($_) -and 
+        $_ -notlike "*$InstallPath*"
     }
+    $NewPath = ($CleanedPathList -join "$Sep").Replace("$Sep$Sep", "$Sep")
+    $NewPath = ($NewPath + "$Sep").Replace("$Sep$Sep", "$Sep")
+    $env:PATH = $NewPath
 
     Write-Host "--- ZSTD Purge Complete ---" -ForegroundColor Green
 }
@@ -511,12 +485,6 @@ if (Test-Path $zstdCMakeFile) {
     }
 }
 
-<# $clangTarget = if ($zstdArch -eq "arm64") { "aarch64-pc-windows-msvc" } else { "x86_64-pc-windows-msvc" }
-$sysProcessor = if ($zstdArch -eq "arm64") { "ARM64" } else { "AMD64" } #>
-if ($env:TARGET_CROSS_COMPILING) {
-
- }
-
 # Common CMake Flags 
 $CommonCmakeArgs = @(
     "-G", "Ninja",
@@ -578,25 +546,6 @@ $CommonCmakeArgs += @(
     "-DCMAKE_ASM_NASM_COMPILER_CLANG_SCAN_DEPS=$env:LLVM_BIN/clang-scan-deps",
     "-DCMAKE_ASM_NASM_COMPILER_RANLIB=$env:LLVM_BIN/llvm-ranlib",
     "-DCMAKE_MT=$env:LLVM_BIN/llvm-mt.exe", #>
-
-if ($env:TARGET_CROSS_COMPILING) {
-    $CommonCmakeArgs += @(
-        "-DCMAKE_CROSSCOMPILING=TRUE",
-        "-DCMAKE_SYSTEM_NAME=$env:TARGET_SYSPROG",
-        "-DCMAKE_SYSTEM_PROCESSOR=$env:TARGET_SYSARCH",
-        "-DCMAKE_C_COMPILER_TARGET=$env:TARGET_TRIPLE",
-        "-DCMAKE_CXX_COMPILER_TARGET=$env:TARGET_TRIPLE",
-        "-DCMAKE_ASM_COMPILER_TARGET=$env:TARGET_TRIPLE",
-        "-DCMAKE_ASM_MASM_COMPILER_TARGET=$env:TARGET_TRIPLE",
-        "-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY",
-        "-DCMAKE_SYSROOT=$env:TARGET_SYSROOT",
-        "-DCMAKE_FIND_ROOT_PATH=$env:TARGET_SYSROOT",
-        "-DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER",
-        "-DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY",
-        "-DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY",
-        "-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY"
-    )
-}
 
 # --- 9. STAGE 1: Build Static Libraries ---
 Write-Host "Building Static $zstdStaticRuntimeLib (zstd_static.lib)..." -ForegroundColor Cyan
@@ -714,36 +663,7 @@ if ((Test-Path $StaticLib) -or (Test-Path $SharedLib) -or (Test-Path $BinaryLib)
 
     # --- 11. Create Environment Helper ---
     Write-Host "Generating environment helper script..." -ForegroundColor Cyan
-    if ($env:IS_TOOLCHAIN) {
-        $TargetEnvContent = @'
-# ZSTD Environment Setup
-
-$Sep = [IO.Path]::PathSeparator
-$DirSep = [IO.Path]::DirectorySeparatorChar
-
-$zstdtargetUsr = "usr${DirSep}VALUE_LIB_NAME"
-
-$zstdroot = Join-Path (Split-Path -Path $PSScriptRoot -Parent) $zstdtargetUsr
-$zstdinclude = Join-Path $zstdroot "include"
-$zstdlibrary = Join-Path $zstdroot "lib"
-$zstdbin = Join-Path $zstdroot "bin"
-$zstdversion = "VALUE_VERSION"
-$zstdversionfile = Join-Path $zstdroot "version.json"
-$zstdabiversion = "VALUE_ABI_VERSION"
-$zstdsoversion = "VALUE_SO_VERSION"
-$zstdbinary = Join-Path $zstdbin "VALUE_LIB_NAME.dll"
-$zstdshared = Join-Path $zstdLibDir "VALUE_LIB_NAME.lib"
-$zstdstatic = Join-Path $zstdLibDir ("VALUE_LIB_NAME" + "_static.lib")
-$zstdlibname = "VALUE_LIB_NAME"
-$zstdcmakepath = "VALUE_LIB_NAME"
-
-'@ -replace "VALUE_LIB_NAME", $zstdLibName `
-   -replace "VALUE_VERSION", $zstdVersion `
-   -replace "VALUE_ABI_VERSION", $binaryversion `
-   -replace "VALUE_SO_VERSION", $binaryversion
-    }
-    else {
-        $TargetEnvContent = @'
+    $TargetEnvContent = @'
 # ZSTD Environment Setup
 
 $Sep = [IO.Path]::PathSeparator
@@ -776,7 +696,6 @@ $zstdcmakepath = "/VALUE_CMAKE_PATH"
    -replace "VALUE_STATIC", $StaticLib `
    -replace "VALUE_LIB_NAME", $zstdLibName `
    -replace "VALUE_CMAKE_PATH", $zstdCMakePath
-    }
 
     $TargetEnvContent += @'
 $env:ZSTD_PATH = $zstdroot
@@ -797,11 +716,9 @@ $env:ZSTD_ABI_VERSION = $zstdabiversion
 $env:ZSTD_SO_VERSION = $zstdsoversion
 $Sep = [IO.Path]::PathSeparator
 if ($env:CMAKE_PREFIX_PATH -notlike "*$zstdcmakepath*") { $env:CMAKE_PREFIX_PATH = $zstdcmakepath + "$Sep" + $env:CMAKE_PREFIX_PATH; $env:CMAKE_PREFIX_PATH = ($env:CMAKE_PREFIX_PATH).Replace("$DirSep$DirSep", "$DirSep").Replace("$Sep$Sep", "$Sep") }
-if ($env:INCLUDE -notlike "*$zstdinclude*") { $env:INCLUDE = $zstdinclude + "$Sep" + $env:INCLUDE$Sep $env:INCLUDE = ($env:INCLUDE).Replace("$Sep$Sep", "$Sep") }
-if ($env:LIB -notlike "*$zstdlibrary*") { $env:LIB = $zstdlibrary + "$Sep" + $env:LIB$Sep $env:LIB = ($env:LIB).Replace("$Sep$Sep", "$Sep") }
-f (-not $env:TARGET_CROSS_COMPILING) {
-    if ($env:PATH -notlike "*$zstdbin*") { $env:PATH = $zstdbin + "$Sep" + $env:PATH$Sep $env:PATH = ($env:PATH).Replace("$Sep$Sep", "$Sep") }
-}
+if ($env:CMAKE_INCLUDE_PATH -notlike "*$zstdinclude*") { $env:CMAKE_INCLUDE_PATH = $zstdinclude + "$Sep" + $env:CMAKE_INCLUDE_PATH$Sep $env:CMAKE_INCLUDE_PATH = ($env:CMAKE_INCLUDE_PATH).Replace("$Sep$Sep", "$Sep") }
+if ($env:CMAKE_LIBRARY_PATH -notlike "*$zstdlibrary*") { $env:CMAKE_LIBRARY_PATH = $zstdlibrary + "$Sep" + $env:CMAKE_LIBRARY_PATH$Sep $env:CMAKE_LIBRARY_PATH = ($env:CMAKE_LIBRARY_PATH).Replace("$Sep$Sep", "$Sep") }
+if ($env:PATH -notlike "*$zstdbin*") { $env:PATH = $zstdbin + "$Sep" + $env:PATH$Sep $env:PATH = ($env:PATH).Replace("$Sep$Sep", "$Sep") }
 Write-Host "zstd Environment Loaded (Version: $zstdversion) (Bin: $zstdbin)" -ForegroundColor Green
 Write-Host "ZSTD_ROOT: $env:ZSTD_ROOT" -ForegroundColor Gray
 '@
@@ -815,27 +732,10 @@ Write-Host "ZSTD_ROOT: $env:ZSTD_ROOT" -ForegroundColor Gray
         Pop-Location; return
     }
     
-    if ($zstdWithMachineEnvironment -and $env:TARGET_HOST_IS_X64_WINDOWS)
+    if ($zstdWithMachineEnvironment -and $env:HOST_IS_X64_WINDOWS)
     {
         # Generating Machine Environment wich add to the persist registry machine Environment
-        if ($env:IS_TOOLCHAIN) {
-            $TargetMachineEnvContent = @'
-# zstd Machine Environment Setup
-
-$Sep = [IO.Path]::PathSeparator
-$DirSep = [IO.Path]::DirectorySeparatorChar
-
-$zstdtargetUsr = "usr${DirSep}VALUE_LIB_NAME"
-
-$zstdroot = Join-Path (Split-Path -Path $PSScriptRoot -Parent) $zstdtargetUsr
-$zstdbin = Join-Path $zstdroot "bin"
-$zstdversion = "VALUE_VERSION"
-
-'@ -replace "VALUE_LIB_NAME", $zstdLibName `
-   -replace "VALUE_VERSION", $zstdVersion
-        }
-        else {
-            $TargetMachineEnvContent = @'
+        $TargetMachineEnvContent = @'
 # zstd Machine Environment Setup
 
 $Sep = [IO.Path]::PathSeparator
@@ -848,9 +748,8 @@ $zstdversion = "VALUE_VERSION"
 '@ -replace "VALUE_ROOT_PATH", $zstdInstallDir `
    -replace "VALUE_BIN_PATH", $zstdBinPath `
    -replace "VALUE_VERSION", $zstdVersion
-        }
 
-        $TargetMachineEnvContent = @'
+        $TargetMachineEnvContent += @'
 if (-not $env:HOST_IS_X64_WINDOWS) {
     Write-Error "This script is intended to run on x64 Windows. Detected Arch OS does not match."
     return
@@ -922,24 +821,21 @@ Write-Host "ZSTD_ROOT: $env:ZSTD_ROOT" -ForegroundColor Gray
         Write-Host "Created: $zstdTargetMachineEnvScript" -ForegroundColor Gray
     }
 
-    if (-not $env:TARGET_CROSS_COMPILING)
-    {
-        # --- Interaction: Prompt to apply persistent changes ---
-        Write-Host ""
-        $choice = Read-Host "Do you want to run the Machine Environment script now to persist zstd changes to the Registry? (y/n)"
-        if ($choice -eq 'y' -or $choice -eq 'Y') {
-            Write-Host "Executing $zstdTargetMachineEnvScript..." -ForegroundColor Yellow
-            try {
-                # Start the generated script. It handles its own elevation logic.
-                & $zstdTargetMachineEnvScript
-            }
-            catch {
-                Write-Error "Failed to execute the Machine Environment script: $($_.Exception.Message)"
-            }
+    # --- Interaction: Prompt to apply persistent changes ---
+    Write-Host ""
+    $choice = Read-Host "Do you want to run the Machine Environment script now to persist zstd changes to the Registry? (y/n)"
+    if ($choice -eq 'y' -or $choice -eq 'Y') {
+        Write-Host "Executing $zstdTargetMachineEnvScript..." -ForegroundColor Yellow
+        try {
+            # Start the generated script. It handles its own elevation logic.
+            & $zstdTargetMachineEnvScript
         }
-        else {
-            Write-Host "Skipped persistent registry update. You can run it later at: $zstdTargetMachineEnvScript" -ForegroundColor Gray
+        catch {
+            Write-Error "Failed to execute the Machine Environment script: $($_.Exception.Message)"
         }
+    }
+    else {
+        Write-Host "Skipped persistent registry update. You can run it later at: $zstdTargetMachineEnvScript" -ForegroundColor Gray
     }
     
     # --- Return to Start ---

@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/dep-perl.ps1
 # created: 2026-05-01
-# lastModified: 2026-05-11
+# lastModified: 2026-05-13
 
 param (
     [Parameter(HelpMessage = "Path for Perl storage", Mandatory = $false)]
@@ -13,7 +13,10 @@ param (
     [switch]$forceCleanup,
     
     [Parameter(HelpMessage = "Add's Perl Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
-    [switch]$withMachineEnvironment
+    [switch]$withMachineEnvironment,
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $RemainingArgs
 )
 
 # Capture parameters

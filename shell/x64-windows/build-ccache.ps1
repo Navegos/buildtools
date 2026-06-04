@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/build-ccache.ps1
 # created: 2026-03-10
-# lastModified: 2026-05-11
+# lastModified: 2026-05-13
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -16,7 +16,10 @@ param (
     [string]$gitBranch = "master",
 
     [Parameter(HelpMessage = "Path for ccache storage", Mandatory = $false)]
-    [string]$ccacheInstallDir = "$env:LIBRARIES_PATH\ccache"
+    [string]$ccacheInstallDir = "$env:LIBRARIES_PATH\ccache",
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $RemainingArgs
 )
 
 # Capture parameters

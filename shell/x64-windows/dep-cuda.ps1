@@ -3,26 +3,26 @@
 # project: buildtools
 # file: x64-windows/dep-cuda.ps1
 # created: 2026-03-14
-# lastModified: 2026-05-11
+# lastModified: 2026-05-16
 
 param (
     [Parameter(HelpMessage = "Base path for cuda storage like path\cuda", Mandatory = $false)]
-    [string]$cudaInstallDir = "$env:LIBRARIES_PATH\cuda",
+    [string]$cudaInstallDir = $null,
 
     [Parameter(HelpMessage = "Minimum Fallback CUDA Version", Mandatory = $false)]
-    [string]$cudaVersion = "13.2.1",
+    [string]$cudaVersion = $null,
     
     [Parameter(HelpMessage = "Minimum Fallback CUDSS Version", Mandatory = $false)]
-    [string]$cudssVersion = "0.7.1",
+    [string]$cudssVersion = $null,
     
     [Parameter(HelpMessage = "Minimum Fallback CUTENSOR Version", Mandatory = $false)]
-    [string]$cutensorVersion = "2.6.0",
+    [string]$cutensorVersion = $null,
     
     [Parameter(HelpMessage = "Minimum Fallback CUSPARSE_LT Version", Mandatory = $false)]
-    [string]$cusparseltVersion = "0.9.0",
+    [string]$cusparseltVersion = $null,
     
     [Parameter(HelpMessage = "Minimum Fallback CUDNN Version", Mandatory = $false)]
-    [string]$cudnnVersion = "9.21.1",
+    [string]$cudnnVersion = $null,
     
     [Parameter(HelpMessage = "Requires member of NVIDIA Developer Program and accept the license terms before downloading the full link for TensorRT package", Mandatory = $false)]
     [string]$tensorrtLink = $null,
@@ -37,8 +37,24 @@ param (
     [switch]$dontUpdate,
     
     [Parameter(HelpMessage = "Add's CUDA Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
-    [switch]$withMachineEnvironment
+    [switch]$withMachineEnvironment,
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $RemainingArgs
 )
+
+# Get the correct list separator for the current OS (; on Win, : on Linux)
+$Sep = [IO.Path]::PathSeparator
+
+# Get the correct folder separator (\ on Win, / on Linux)
+$DirSep = [IO.Path]::DirectorySeparatorChar
+
+if ([string]::IsNullOrWhitespace($cudaInstallDir)) { $cudaInstallDir = Join-Path $env:LIBRARIES_PATH "$env:HOST_TRIPLET${DirSep}cuda" }
+if ([string]::IsNullOrWhitespace($cudaVersion)) { $cudaVersion = "13.2.1" }
+if ([string]::IsNullOrWhitespace($cudssVersion)) { $cudssVersion = "0.7.1" }
+if ([string]::IsNullOrWhitespace($cutensorVersion)) { $cutensorVersion = "2.6.0" }
+if ([string]::IsNullOrWhitespace($cusparseltVersion)) { $cusparseltVersion = "0.9.0" }
+if ([string]::IsNullOrWhitespace($cudnnVersion)) { $cudnnVersion = "9.21.1" }
 
 # Capture parameters
 $CudaWithMachineEnvironment = $withMachineEnvironment

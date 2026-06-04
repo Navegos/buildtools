@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/dep-icu.ps1
 # created: 2026-03-10
-# lastModified: 2026-05-11
+# lastModified: 2026-05-13
 
 param (
     [Parameter(HelpMessage = "Target vcpkg ICU triplet")]
@@ -13,7 +13,10 @@ param (
     [switch]$forceCleanup,
     
     [Parameter(HelpMessage = "Add's ICU Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
-    [switch]$withMachineEnvironment
+    [switch]$withMachineEnvironment,
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $RemainingArgs
 )
 
 # Capture parameters

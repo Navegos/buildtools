@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-linux/add-user-paths.ps1
 # created: 2026-05-09
-# lastModified: 2026-05-11
+# lastModified: 2026-05-13
 
 param (
     [Parameter(HelpMessage = "Base path for library storage", Mandatory = $false)]
@@ -16,10 +16,13 @@ param (
     [string]$BinariesDir = "/opt/libs/binaries",
     
     [Parameter(HelpMessage = "Base path for build tools", Mandatory = $false)]
-    [string]$BuildToolsDir = (Split-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -Parent) # BuildTools root folder
+    [string]$BuildToolsDir = (Split-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -Parent),
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $RemainingArgs
 )
 
-if (-not $IsLinux) {
+if (-not $env:HOST_IS_LINUX) {
     Write-Error "This script is intended to run on Linux. Detected OS does not match."
     return
 }

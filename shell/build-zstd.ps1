@@ -3,7 +3,7 @@
 # project: buildtools
 # file: build-zstd.ps1
 # created: 2026-04-09
-# lastModified: 2026-05-10
+# lastModified: 2026-05-16
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -21,14 +21,20 @@ param (
     [Parameter(HelpMessage = "Path for zstd library storage", Mandatory = $false)]
     [string]$zstdInstallDir = $null,
     
+    [Parameter(HelpMessage = "Target Build Type to build for", Mandatory = $false)]
+    [string]$targetBuildType = $null,
+    
     [Parameter(HelpMessage = "Target Architecture to build for", Mandatory = $false)]
     [string]$targetArch = $null,
     
     [Parameter(HelpMessage = "Target Platform to build for", Mandatory = $false)]
     [string]$targetPlatform = $null,
     
-    [Parameter(HelpMessage = "Target Build Type to build for", Mandatory = $false)]
-    [string]$targetBuildType = $null,
+    [Parameter(HelpMessage = "Target Host Architecture to build for", Mandatory = $false)]
+    [string]$targetHostArch = $null,
+    
+    [Parameter(HelpMessage = "Target Host Platform to build for", Mandatory = $false)]
+    [string]$targetHostPlatform = $null,
     
     [Parameter(HelpMessage = "Path for toolchain installation, expects target triple at the end of path", Mandatory = $false)]
     [string]$toolchainInstallDir = $null,
@@ -40,7 +46,10 @@ param (
     [switch]$forceCleanup,
     
     [Parameter(HelpMessage = "Add's zstd Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
-    [switch]$withMachineEnvironment
+    [switch]$withMachineEnvironment,
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $RemainingArgs
 )
 
 # 1. Bootstrap Environment if variables are missing
@@ -56,11 +65,11 @@ if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env
 $DirSep = [IO.Path]::DirectorySeparatorChar
 
 # 1. Architecture Detection
-if (-not $env:HOST_ARCH) {
+if (-not $env:HOST_ARCH -or $isToolchain) {
     $archTripleScript = Join-Path $PSScriptRoot "arch-triple.ps1"
     if (Test-Path $archTripleScript) {
         # 1. Ensure the default path is captured if not explicitly provided by the user
-        $ArchDirParams = 'targetArch', 'targetPlatform', 'toolchainInstallDir'
+        $ArchDirParams = 'targetArch', 'targetPlatform', 'targetHostArch', 'targetHostPlatform', 'toolchainInstallDir'
         foreach ($ArchParamName in $ArchDirParams) {
             if (-not $PSBoundParameters.ContainsKey($ArchParamName)) {
                 # Dynamically get the value of the local variable with the same name
@@ -79,20 +88,25 @@ if (-not $env:HOST_ARCH) {
 if ([string]::IsNullOrWhitespace($gitUrl)) { $gitUrl = "https://github.com/facebook/zstd.git" }
 if ([string]::IsNullOrWhitespace($gitBranch)) { $gitBranch = "dev" }
 if ([string]::IsNullOrWhitespace($zstdLibName)) { $zstdLibName = "zstd" }
-if ($env:IS_TOOLCHAIN) {
+if ($isToolchain) {
     if ([string]::IsNullOrWhitespace($zstdInstallDir)) { $zstdInstallDir = Join-Path $env:TARGET_USR_SYSROOT $zstdLibName }
+    $targetScript = Join-Path $PSScriptRoot "$env:HOST_TRIPLET${DirSep}$env:TARGET_TRIPLE${DirSep}build-zstd.ps1"
+    $currentArch = $env:TARGET_ARCH
+    $currentPlatform = $env:TARGET_PLATFORM
 }
 else {
-    if ([string]::IsNullOrWhitespace($zstdInstallDir)) { $zstdInstallDir = Join-Path $env:LIBRARIES_PATH ("$env:TARGET_TRIPLET$DirSep" + "$zstdLibName") }
+    if ([string]::IsNullOrWhitespace($zstdInstallDir)) { $zstdInstallDir = Join-Path $env:LIBRARIES_PATH "$env:HOST_TRIPLET${DirSep}$zstdLibName" }
+    $targetScript = Join-Path $PSScriptRoot "$env:HOST_TRIPLET${DirSep}build-zstd.ps1"
+    $currentArch = $env:HOST_ARCH
+    $currentPlatform = $env:HOST_PLATFORM
 }
-
-$targetScript = Join-Path $PSScriptRoot ("$env:TARGET_TRIPLET$DirSep" + "build-zstd.ps1")
+if ([string]::IsNullOrWhitespace($targetBuildType)) { $targetBuildType = "Release" }
 
 if (Test-Path $targetScript) {
-    Write-Host "[OS/ARCH] $targetPlatform $targetArch detected. Delegating..." -ForegroundColor Cyan
+    Write-Host "[OS/ARCH] $currentPlatform $currentArch detected. Delegating..." -ForegroundColor Cyan
     
     # 1. Ensure the default path is captured if not explicitly provided by the user
-    $DirParams = 'workspacePath', 'gitUrl', 'gitBranch', 'zstdLibName', 'zstdInstallDir', 'targetArch', 'targetPlatform', 'targetBuildType'
+    $DirParams = 'workspacePath', 'gitUrl', 'gitBranch', 'zstdLibName', 'zstdInstallDir', 'targetBuildType'
     foreach ($ParamName in $DirParams) {
         if (-not $PSBoundParameters.ContainsKey($ParamName)) {
             # Dynamically get the value of the local variable with the same name

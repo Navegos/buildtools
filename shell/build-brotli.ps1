@@ -3,7 +3,7 @@
 # project: buildtools
 # file: build-brotli.ps1
 # created: 2026-05-01
-# lastModified: 2026-05-01
+# lastModified: 2026-05-13
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -25,7 +25,10 @@ param (
     [switch]$forceCleanup,
     
     [Parameter(HelpMessage = "Add's Brotli Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
-    [switch]$withMachineEnvironment
+    [switch]$withMachineEnvironment,
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $RemainingArgs
 )
 
 # 1. Architecture Detection
@@ -41,7 +44,7 @@ if (-not $archFolder) {
 }
 
 # 2. Platform Detection
-if ($IsWindows) {
+if ($env:HOST_IS_WINDOWS) {
     $platform = "windows"
     if ([string]::IsNullOrWhitespace($brotliInstallDir)) { $brotliInstallDir = "$env:LIBRARIES_PATH\brotli" }
     $targetScript = Join-Path $PSScriptRoot "$($archFolder)-$($platform)\build-brotli.ps1"

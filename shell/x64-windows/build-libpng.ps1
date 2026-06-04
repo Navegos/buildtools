@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/build-libpng.ps1
 # created: 2026-05-03
-# lastModified: 2026-05-11
+# lastModified: 2026-05-13
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -25,7 +25,10 @@ param (
     [switch]$forceCleanup,
     
     [Parameter(HelpMessage = "Add's libpng Machine Environment Variables.", Mandatory = $false)]
-    [switch]$withMachineEnvironment
+    [switch]$withMachineEnvironment,
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $RemainingArgs
 )
 
 $libpngWorkspacePath = $workspacePath

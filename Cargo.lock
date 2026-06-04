@@ -691,20 +691,40 @@ dependencies = [
 ]
 
 [[package]]
-name = "buildtools-control-panel"
+name = "buildtools-controller"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "openidconnect",
- "quinn",
- "rcgen",
- "rustls",
- "serde",
- "serde_json",
  "slint",
  "slint-build",
  "tokio",
  "url",
+]
+
+[[package]]
+name = "buildtools-master"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "quinn",
+ "rcgen",
+ "rustls",
+ "tokio",
+]
+
+[[package]]
+name = "buildtools-shell"
+version = "0.1.0"
+
+[[package]]
+name = "buildtools-worker"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "quinn",
+ "rustls",
+ "tokio",
 ]
 
 [[package]]

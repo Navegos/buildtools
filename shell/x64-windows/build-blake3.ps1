@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/build-blake3.ps1
 # created: 2026-03-10
-# lastModified: 2026-05-11
+# lastModified: 2026-05-13
 
 param (
     [Parameter(HelpMessage = "Base workspace path", Mandatory = $false)]
@@ -19,7 +19,10 @@ param (
     [string]$blake3InstallDir = "$env:LIBRARIES_PATH\blake3",
     
     [Parameter(HelpMessage = "Add's BLAKE3 Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
-    [switch]$withMachineEnvironment
+    [switch]$withMachineEnvironment,
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $RemainingArgs
 )
 
 # Capture parameters

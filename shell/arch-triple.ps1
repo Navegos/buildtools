@@ -3,7 +3,7 @@
 # project: buildtools
 # file: shell/arch-triple.ps1
 # created: 2026-05-10
-# lastModified: 2026-05-11
+# lastModified: 2026-05-16
 
 param (
     [Parameter(HelpMessage = "Target Architecture to build for", Mandatory = $false)]
@@ -22,7 +22,10 @@ param (
     [string]$toolchainInstallDir = $null,
     
     [Parameter(HelpMessage = "Indicates if the target is part of a toolchain", Mandatory = $false)]
-    [switch]$isToolchain
+    [switch]$isToolchain,
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $RemainingArgs
 )
 
 # 1. Bootstrap Environment if variables are missing
@@ -67,6 +70,10 @@ else {
     if ([string]::IsNullOrWhitespace($targetArch)) { $targetArch = $hostArch }
 }
 
+# 2. Platform Detection (v5.1 and v6+ compatible)
+$isWindowsOS = $IsWindows -or ($env:OS -like "*Windows*")
+$isLinuxOS = $IsLinux -or ($null -ne $IsLinux -and $IsLinux)
+
 $targetArch = $targetArch.ToLower()
 $targetPlatform = $targetPlatform.ToLower()
 
@@ -78,11 +85,11 @@ if ($hostArch -ne $targetArch) {
 $env:CROSS_ARCH = $crossArch
 
 # Host platform validation.
-if ($IsWindows) {
+if ($isWindowsOS) {
     if ([string]::IsNullOrWhitespace($targetPlatform)) { $targetPlatform = $platformWindows }
     $hostPlatform = $platformWindows
 }
-elseif ($IsLinux) {
+elseif ($isLinuxOS) {
     if ([string]::IsNullOrWhitespace($targetPlatform)) { $targetPlatform = $platformLinux }
     $hostPlatform = $platformLinux
 }
@@ -254,12 +261,12 @@ elseif ($targetArch -eq $archArm64 -or $targetArch -eq $archAarch64) {
 
 if ($targetPlatform -eq $platformWindows) {
     $env:TARGET_SYSPROG = "Windows"
-    $env:TARGET_TRIPLE = if ($targetArch -eq $archArm64) { "aarch64-pc-windows-msvc" } else { "x86_64-pc-windows-msvc" }
+    $env:TARGET_TRIPLE = if ($targetArch -eq $archArm64 -or $targetArch -eq $archAarch64) { "aarch64-pc-windows-msvc" } else { "x86_64-pc-windows-msvc" }
     $env:TARGET_PLATFORM = "windows"
 }
 elseif ($targetPlatform -eq $platformLinux) {
     $env:TARGET_SYSPROG = "Linux"
-    $env:TARGET_TRIPLE = if ($targetArch -eq $archArm64) { "aarch64-unknown-linux-gnueabi" } else { "x86_64-unknown-linux-gnu" }
+    $env:TARGET_TRIPLE = if ($targetArch -eq $archArm64 -or $targetArch -eq $archAarch64) { "aarch64-unknown-linux-gnueabi" } else { "x86_64-unknown-linux-gnu" }
     $env:TARGET_PLATFORM = "linux"
 }
 
@@ -321,4 +328,6 @@ fsutil.exe file setCaseSensitiveInfo "VALUE_TOOLCHAIN_DIR" enable
 }
 
 # Triplet to be used for folder naming and toolchain detection in build scripts
+$env:HOST_TRIPLET = "$env:HOST_ARCH-$env:HOST_PLATFORM"
+$env:TARGET_HOST_TRIPLET = "$env:TARGET_HOST_ARCH-$env:TARGET_HOST_PLATFORM"
 $env:TARGET_TRIPLET = "$env:TARGET_ARCH-$env:TARGET_PLATFORM"

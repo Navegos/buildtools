@@ -3,14 +3,17 @@
 # project: buildtools
 # file: x64-windows/dep-git.ps1
 # created: 2026-03-14
-# lastModified: 2026-05-11
+# lastModified: 2026-05-13
 
 param (
     [Parameter(HelpMessage = "Path for git Installation", Mandatory = $false)]
     [string]$gitInstallDir = $(Join-Path $env:ProgramFiles "Git"),
     
     [Parameter(HelpMessage = "Force a full purge of the local GIT version before continuing", Mandatory = $false)]
-    [switch]$forceCleanup
+    [switch]$forceCleanup,
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $RemainingArgs
 )
 
 # Capture parameters

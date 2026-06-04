@@ -3,12 +3,20 @@
 # project: buildtools
 # file: x64-linux/get-pwsh.ps1
 # created: 2026-05-12
-# lastModified: 2026-05-11
+# lastModified: 2026-05-13
 
 param (
     [Parameter(HelpMessage = "Default installation directory")]
-    [string]$powershellInstallDir = "/opt/microsoft/powershell/7"
+    [string]$powershellInstallDir = "/opt/microsoft/powershell/7",
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $RemainingArgs
 )
+
+if (-not $env:HOST_IS_LINUX) {
+    Write-Error "This script is intended to run on Linux. Detected OS does not match."
+    return
+}
 
 # --- 0. Self-Elevation Logic ---
 $IsAdmin = (id -u) -eq 0

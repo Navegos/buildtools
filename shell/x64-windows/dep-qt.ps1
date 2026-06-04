@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/dep-qt.ps1
 # created: 2026-05-03
-# lastModified: 2026-05-11
+# lastModified: 2026-05-13
 
 param (
     [Parameter(HelpMessage = "Path for Qt storage", Mandatory = $false)]
@@ -19,12 +19,16 @@ param (
     [switch]$withMachineEnvironment,
     
     [Parameter(HelpMessage = "Install all architectures and targets (default true)", Mandatory = $false)]
-    [bool]$installAll = $true
+    [switch]$installAll,
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $RemainingArgs
 )
 
 # Capture parameters
 $QtWithMachineEnvironment = $withMachineEnvironment
 $QtForceCleanup = $forceCleanup
+$QtinstallAll = $installAll
 
 if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env:ENVIRONMENT_PATH) -or [string]::IsNullOrWhitespace($env:BINARIES_PATH) -or -not (Test-Path $env:BINARIES_PATH) -or [string]::IsNullOrWhitespace($env:LIBRARIES_PATH) -or -not (Test-Path $env:LIBRARIES_PATH) -or [string]::IsNullOrWhitespace($env:BUILDTOOLS_PATH) -or -not (Test-Path $env:BUILDTOOLS_PATH)) {
     Write-Error "User Environment variables missing. Please run add-user-paths.ps1 -LibrariesDir 'Path/for/Libraries' -BinariesDir 'Path/for/Binaries' -EnvironmentDir 'Path/for/Environment' -BuildToolsDir 'Path/for/BuildTools'"
@@ -227,7 +231,7 @@ if (-not $qtArchPath) {
         & $env:BINARY_PYTHON -m pip install -U $packages --no-warn-script-location | Out-Null
     }
     
-    if ($installAll) {
+    if ($QtinstallAll) {
         $qtInstallList = @(
             @{ Target = "desktop"; Arch = "win64_msvc2022_64" },
             @{ Target = "desktop"; Arch = "win64_msvc2022_arm64" },
@@ -254,7 +258,7 @@ if (-not $qtArchPath) {
         if ($LASTEXITCODE -ne 0) { Write-Warning "aqtinstall failed to install Qt $qtVersion for $($item.Arch). Skipping..." }
     }
 
-    if ($installAll) {
+    if ($QtinstallAll) {
         Write-Host " -> Installing Source (Src)..." -ForegroundColor Cyan
         & $env:BINARY_PYTHON -m aqt install-src windows $qtVersion --outputdir $qtInstallDir
         if ($LASTEXITCODE -ne 0) { Write-Warning "aqtinstall failed to install Qt $qtVersion Source. Skipping..." }

@@ -2,5 +2,6 @@
 checks.json
 target/debug/
 target/flycheck0/
+target/release/
 
 .rustc_info.json

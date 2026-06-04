@@ -3,7 +3,7 @@
 # project: buildtools
 # file: shell/env/env-zstd.ps1
 # created: 2026-05-07
-# lastModified: 2026-05-11
+# lastModified: 2026-05-13
 
 param (
     [Parameter(HelpMessage = "Target Architecture to build for", Mandatory = $false)]
@@ -64,11 +64,11 @@ if ($hostArch -ne $targetArch) {
 }
 
 # Host platform validation.
-if ($IsWindows) {
+if ($env:HOST_IS_WINDOWS) {
     if ([string]::IsNullOrWhitespace($targetPlatform)) { $targetPlatform = $platformWindows }
     $hostPlatform = $platformWindows
 }
-elseif ($IsLinux) {
+elseif ($env:HOST_IS_LINUX) {
     if ([string]::IsNullOrWhitespace($targetPlatform)) { $targetPlatform = $platformLinux }
     $hostPlatform = $platformLinux
 }

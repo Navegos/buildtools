@@ -3,7 +3,7 @@
 # project: buildtools
 # file: x64-windows/dep-vcpkg.ps1
 # created: 2026-03-08
-# lastModified: 2026-05-11
+# lastModified: 2026-05-17
 
 param (
     [Parameter(HelpMessage = "Path for vcpkg storage", Mandatory = $false)]
@@ -13,7 +13,10 @@ param (
     [switch]$forceCleanup,
     
     [Parameter(HelpMessage = "Add's vcpkg Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
-    [switch]$withMachineEnvironment
+    [switch]$withMachineEnvironment,
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $RemainingArgs
 )
 
 # Capture parameters
@@ -26,7 +29,11 @@ if ([string]::IsNullOrWhitespace($env:ENVIRONMENT_PATH) -or -not (Test-Path $env
     return
 }
 
+$targetEnvironmentDir = Join-Path $env:ENVIRONMENT_PATH $env:HOST_TRIPLET
+
 $EnvironmentDir = "$env:ENVIRONMENT_PATH"
+
+$vcpkgTargetEnvironmentDir = $targetEnvironmentDir
 
 # if Symlink present delete
 $GlobalBinDir = "$env:BINARIES_PATH"
@@ -36,8 +43,12 @@ if (Test-Path $TargetLink) { Remove-Item $TargetLink -Force -ErrorAction Silentl
 $vcpkgBinPath = $vcpkgInstallDir
 $vcpkgExePath = Join-Path $vcpkgBinPath "vcpkg.exe"
 $versionFile = Join-Path $vcpkgInstallDir "version.json"
-$vcpkgEnvScript = Join-Path $EnvironmentDir "env-vcpkg.ps1"
-$vcpkgMachineEnvScript = Join-Path $EnvironmentDir "machine-env-vcpkg.ps1"
+$Envvcpkg = "env-vcpkg.ps1"
+$MachineEnvvcpkg = "machine-env-vcpkg.ps1"
+$CleanMachineEnvvcpkg = "clean-machine-env-vcpkg.ps1"
+$vcpkgEnvScript = Join-Path $vcpkgTargetEnvironmentDir $Envvcpkg
+$vcpkgMachineEnvScript = Join-Path $vcpkgTargetEnvironmentDir $MachineEnvvcpkg
+$vcpkgCleanMachineEnvScript = Join-Path $vcpkgTargetEnvironmentDir $CleanMachineEnvvcpkg
 
 # Version Detection
 $repo = "microsoft/vcpkg"
@@ -69,8 +80,6 @@ function Invoke-vcpkgVersionPurge {
 
     if ($vcpkgWithMachineEnvironment)
     {
-        $vcpkgCleanMachineEnvScript = Join-Path $env:TEMP "clean-machine-env-vcpkg.ps1"
-
         # Generating Clean Machine Environment wich removes the persist registry machine Environment
         $CleanMachineEnvContent = @'
 # vcpkg Clean Machine Environment Setup
@@ -147,9 +156,6 @@ Write-Host "[REMOVED] ($TargetScope) all '*$vcpkgroot*' removed from TOOLS_PATH"
             Write-Error "Skipped Clean Machine Environment vcpkg changes."
             return
         }
-
-        # Cleanup
-        Remove-Item $vcpkgCleanMachineEnvScript -Recurse -Force -ErrorAction SilentlyContinue
     }
 
     # 2. Filesystem Clean (Requires checking for locked files)

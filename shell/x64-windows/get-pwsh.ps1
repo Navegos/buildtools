@@ -3,11 +3,14 @@
 # project: buildtools
 # file: x64-windows/get-pwsh.ps1
 # created: 2026-03-15
-# lastModified: 2026-04-26
+# lastModified: 2026-05-13
 
 param (
     [Parameter(HelpMessage = "Path for PowerShell Installation", Mandatory = $false)]
-    [string]$powershellInstallDir = $(Join-Path $env:ProgramFiles "PowerShell")
+    [string]$powershellInstallDir = $(Join-Path $env:ProgramFiles "PowerShell"),
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $RemainingArgs
 )
 
 # --- 0. Self-Elevation Logic ---

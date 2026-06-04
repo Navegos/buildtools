@@ -2,6 +2,7 @@
 members = [
     "master",
     "controller",
-    "worker"
+    "worker",
+    "shell"
 ]
 resolver = "2"

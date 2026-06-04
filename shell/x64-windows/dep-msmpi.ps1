@@ -3,14 +3,17 @@
 # project: buildtools
 # file: x64-windows/dep-msmpi.ps1
 # created: 2026-04-30
-# lastModified: 2026-05-11
+# lastModified: 2026-05-13
 
 param (
     [Parameter(HelpMessage = "Force a full purge of the local MS-MPI version before continuing", Mandatory = $false)]
     [switch]$forceCleanup,
     
     [Parameter(HelpMessage = "Add's MS-MPI Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
-    [switch]$withMachineEnvironment
+    [switch]$withMachineEnvironment,
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $RemainingArgs
 )
 
 # Capture parameters

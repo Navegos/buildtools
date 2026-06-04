@@ -3,19 +3,32 @@
 # project: buildtools
 # file: x64-windows/dev-shell.ps1
 # created: 2026-03-01
-# lastModified: 2026-04-26
+# lastModified: 2026-05-17
 
 param (
     [Parameter(HelpMessage = "Add's Visual Studio 2026 Machine Environment Variables. Requires Machine Administrator Rights.", Mandatory = $false)]
     [switch]$withMachineEnvironment,
 
     [Parameter(HelpMessage = "Upgrades Visual Studio 2026 Installation. Requires Machine Administrator Rights.", Mandatory = $false)]
-    [switch]$doUpgrade
+    [switch]$doUpgrade,
+
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $RemainingArgs
 )
+
+# Get the correct list separator for the current OS (; on Win, : on Linux)
+$Sep = [IO.Path]::PathSeparator
+
+# Get the correct folder separator (\ on Win, / on Linux)
+$DirSep = [IO.Path]::DirectorySeparatorChar
 
 # Capture parameters
 $VSWithMachineEnvironment = $withMachineEnvironment
 $VSDoUpgrade = $doUpgrade
+
+$targetEnvironmentDir = Join-Path $env:ENVIRONMENT_PATH $env:HOST_TRIPLET
+
+#$EnvironmentDir = "$env:ENVIRONMENT_PATH"
 
 # --- 1. Initialize Visual Studio 2026 Dev Environment ---
 # We check for VCINSTALLDIR to see if the environment is already loaded
@@ -145,6 +158,9 @@ if (-not $env:VCINSTALLDIR) {
         $env:LIB = $LIB.Replace('\\', '\')
         $env:PATH = $PATH.Replace('\\', '\')
 
+        if ($env:CMAKE_INCLUDE_PATH -notlike $env:INCLUDE) { $env:CMAKE_INCLUDE_PATH = $env:CMAKE_INCLUDE_PATH + "$Sep" + $env:INCLUDE; $env:CMAKE_INCLUDE_PATH = ($env:CMAKE_INCLUDE_PATH).Replace("$DirSep$DirSep", "$DirSep").Replace("$Sep$Sep", "$Sep") }
+        if ($env:CMAKE_LIBRARY_PATH -notlike $env:LIB) { $env:CMAKE_LIBRARY_PATH = $env:CMAKE_LIBRARY_PATH + "$Sep" + $env:LIB; $env:CMAKE_LIBRARY_PATH = ($env:CMAKE_LIBRARY_PATH).Replace("$DirSep$DirSep", "$DirSep").Replace("$Sep$Sep", "$Sep") }
+
         Write-Host "Visual Studio 2026 DevShell initialized (x64)." -ForegroundColor Green
     } else {
         Write-Error "Initialization failed. Could not locate DevShell DLL."
@@ -154,12 +170,14 @@ if (-not $env:VCINSTALLDIR) {
     Write-Host "Visual Studio 2026 DevShell already initialized (x64)." -ForegroundColor Green
 }
 
+$VSTargetEnvironmentDir = $targetEnvironmentDir
+
 if ($VSWithMachineEnvironment) {
     $clExePath = (where.exe cl.exe | Select-Object -First 1).Trim()
 
     if (Test-Path $clExePath)
     {
-        $VSMachineEnvScript = Join-Path $EnvironmentDir "machine-env-vs.ps1"
+        $VSMachineEnvScript = Join-Path $VSTargetEnvironmentDir "machine-env-vs.ps1"
 
         $vsInstallDir = $env:VSINSTALLDIR
         $vcInstallDir = $env:VCINSTALLDIR
@@ -226,12 +244,12 @@ $RegKey = [Microsoft.Win32.Registry]::$RegRoot.OpenSubKey($RegPath, $true)
 $CurrentRawPath = $RegKey.GetValue("VSTOOLS_PATH", "", [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
 
 # Cleanup: Remove empty strings, any path containing Microsoft Visual Studio, and the current target (to avoid dups)
-$CleanedPathList = $CurrentRawPath -split ';' | Where-Object { 
+$CleanedPathList = $CurrentRawPath -split '$Sep' | Where-Object { 
     -not [string]::IsNullOrWhitespace($_) -and 
     $_ -notlike "*\Program Files (x86)\Microsoft Visual Studio*"
 }
 
-$NewRawPath = ($CleanedPathList -join ";").Replace(";;", ";")
+$NewRawPath = ($CleanedPathList -join "$Sep").Replace("$Sep$Sep", "$Sep")
 
 foreach ($Entry in $RegEnvMapping.GetEnumerator())
 {
@@ -239,10 +257,10 @@ foreach ($Entry in $RegEnvMapping.GetEnumerator())
     $TargetPath = $Entry.Value
     
     # Update Current Process
-    Set-Item -Path "Env:\$VarName" -Value $TargetPath
+    Set-Item -Path "Env:${DirSep}$VarName" -Value $TargetPath
     
     # Rebuild
-    $NewRawPath = ($TargetPath + ";" + $NewRawPath + ";").Replace(";;", ";")
+    $NewRawPath = ($TargetPath + "$Sep" + $NewRawPath + "$Sep").Replace("$Sep$Sep", "$Sep")
     
     Write-Host "[UPDATED] ($TargetScope) '$VarName' synced in VSTOOLS_PATH" -ForegroundColor $ScopeColor
 }
